@@ -12,8 +12,9 @@
 .equ Lm = PC0
 .equ Lp = PC1
 
-; motorR
+; 'Motores'
 .equ motorR = PC2
+.equ motorL = PD1
 
 ; Inputs
 
@@ -41,6 +42,7 @@ sbi DDRB, Ll
 sbi DDRC, Lm
 sbi DDRC, Lp
 sbi DDRC, motorR
+sbi DDRD, motorL
 
 ; Entradas
 

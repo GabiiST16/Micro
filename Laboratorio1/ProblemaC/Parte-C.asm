@@ -1,4 +1,4 @@
-.include"m328pdef.inc
+.include "m328pdef.inc"
 
 .def TEMP       =R16
 .def SECUENCIA  =R17
@@ -11,9 +11,9 @@
     rjmp RESET
 
 RESET:
-ldi TEMP, LOW(REMEND)
+ldi TEMP, LOW (RAMEND)
 out SPL, TEMP
-ldi TEMP, HIGH(REMEND)
+ldi TEMP, HIGH (RAMEND)
 out SPH, TEMP
 
 ldi TEMP, 0xFF
@@ -26,7 +26,7 @@ out DDRD, TEMP
 ldi TEMP, (1<<PD2) | (1<<PD3) | (1<<PD4)
 out PORTD, TEMP
 
- SECUENCIA, 1
+ ;SECUENCIA, 1
 
 MAIN_LOOP:
     rcall LEER_BOTONES 
@@ -43,17 +43,25 @@ MAIN_LOOP:
     cpi SECUENCIA, 4
     brne EJECUTAR_SEC4
 
-    cpi SECUENCIA, 5
-    brne EJECUTAR_SEC5
+   cpi SECUENCIA, 5
+brne NO_SEC5
+jmp EJECUTAR_SEC5
+NO_SEC5:
 
-    cpi SECUENCIA, 6
-    brne EJECUTAR_SEC6
+   cpi SECUENCIA, 6
+brne NO_SEC6
+jmp EJECUTAR_SEC6
+NO_SEC6:
 
-    cpi SECUENCIA, 7
-    brne EJECUTAR_SEC7
+   cpi SECUENCIA, 7
+brne NO_SEC7
+jmp EJECUTAR_SEC7
+NO_SEC7:
 
-    cpi SECUENCIA, 8
-    brne EJECUTAR_SEC8
+   cpi SECUENCIA, 8
+brne NO_SEC8
+jmp EJECUTAR_SEC8
+NO_SEC8:
 
     rjmp MAIN_LOOP
 
@@ -127,7 +135,7 @@ EJECUTAR_SEC4:
 
     rjmp MAIN_LOOP
 
-EJECUTAR_SEC5
+EJECUTAR_SEC5:
     ldi PATRON, 0b11000011
     rcall MOSTRAR_LEDS
     rcall DELAY_MS
@@ -150,7 +158,7 @@ EJECUTAR_SEC5
 
      rjmp MAIN_LOOP
 
-EJECUTAR_SEC6
+EJECUTAR_SEC6:
     ldi PATRON, 0b10010010
     rcall MOSTRAR_LEDS
     rcall DELAY_MS
@@ -163,7 +171,7 @@ EJECUTAR_SEC6
     
      rjmp MAIN_LOOP
 
-EJECUTAR_SEC7
+EJECUTAR_SEC7:
     ldi PATRON, 0b11111111
     rcall MOSTRAR_LEDS
     rcall DELAY_MS
@@ -192,10 +200,6 @@ EJECUTAR_SEC7
     rcall MOSTRAR_LEDS
     rcall DELAY_MS
     rcall LEER_BOTONES
-    ldi PATRON, 0b111110111
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
     ldi PATRON, 0b11111011
     rcall MOSTRAR_LEDS
     rcall DELAY_MS
@@ -204,10 +208,14 @@ EJECUTAR_SEC7
     rcall MOSTRAR_LEDS
     rcall DELAY_MS
     rcall LEER_BOTONES
+    ldi PATRON, 0b11111110
+    rcall MOSTRAR_LEDS
+    rcall DELAY_MS
+    rcall LEER_BOTONES
     
      rjmp MAIN_LOOP
 
-EJECUTAR_SEC8
+EJECUTAR_SEC8:
     ldi PATRON, 0b00011000
     rcall MOSTRAR_LEDS
     rcall DELAY_MS
@@ -234,24 +242,24 @@ LEER_BOTONES:
 
 ret
 
-SIGUIENTE_SEC
-    rcall ANTI_REBOTE[cite: 1]
+SIGUIENTE_SEC:
+    rcall ANTI_REBOTE
     inc SECUENCIA
-    inc SECUENCIA, 9
+    cpi SECUENCIA, 9
     brne FIN_BOTONES
     ldi SECUENCIA, 1
     rjmp FIN_BOTONES
 
-ANTERIOR_SEC
-    rcall ANTI_REBOTE[cite: 1]
+ANTERIOR_SEC:
+    rcall ANTI_REBOTE
     inc SECUENCIA
-    inc SECUENCIA, 0
+	cpi SECUENCIA, 0
     brne FIN_BOTONES
     ldi SECUENCIA, 8
     rjmp FIN_BOTONES
 
-REINICIAR_SEC
-    rcall ANTI_REBOTE[cite: 1]
+REINICIAR_SEC:
+    rcall ANTI_REBOTE
     ldi SECUENCIA, 1
 
 FIN_BOTONES:
@@ -275,7 +283,7 @@ DELAY_CORTO:
     ldi R_DELAY3, 150
     rjmp L_DELAY
 
-DELAY_MEDIO:
+DELAY_MS:
     ldi R_DELAY1, 6
     ldi R_DELAY2, 200
     ldi R_DELAY3, 200
@@ -288,5 +296,3 @@ L_DELAY:
     dec R_DELAY1
     brne L_DELAY
     ret
-
-

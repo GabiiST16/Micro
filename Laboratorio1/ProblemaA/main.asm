@@ -12,8 +12,8 @@
 .equ Lm = PC0
 .equ Lp = PC1
 
-; Motor
-.equ motor = PC2
+; motorR
+.equ motorR = PC2
 
 ; Inputs
 
@@ -24,6 +24,7 @@
 
 .def Inicio = R17
 .def Selector = R16
+.def CuentaLavado = R21
 
 .cseg
 .org 0x0000
@@ -39,7 +40,7 @@ sbi DDRB, L5
 sbi DDRB, Ll
 sbi DDRC, Lm
 sbi DDRC, Lp
-sbi DDRC, motor
+sbi DDRC, motorR
 
 ; Entradas
 
@@ -51,6 +52,12 @@ cbi DDRD, Sf
 sbi PORTC, Psc
 ldi Selector, 1
 ldi Inicio, 1
+ldi CuentaLavado, 5
+
+; Variables para el delay de 1s
+ldi  r18, 82
+ldi  r19, 43
+ldi  r20, 255
 
 main_loop:
     cpi Inicio, 1
@@ -61,7 +68,7 @@ Lavado_listo:
     rjmp Continuar_inicio
 
 Continuar_inicio:
-    cbi PORTC, motor
+    cbi PORTC, motorR
     cbi PORTB, Ll
     cbi PORTC, Lm
     cbi PORTC, Lp
@@ -79,17 +86,17 @@ Continuar_inicio:
 
 encender_Ll:
     sbi PORTB, Ll
-    rjump Lavado
+    rjmp Lavado
     rjmp leer_selector
 
 encender_Lm:
     sbi PORTC, Lm
-    rjump Lavado
+    rjmp Lavado
     rjmp leer_selector
 
 encender_Lp:
     sbi PORTC, Lp
-    rjump Lavado
+    rjmp Lavado
     rjmp leer_selector
 
 leer_selector:
@@ -111,7 +118,72 @@ Lavado:
     cbi PORTC, Lm
     cbi PORTC, Lp
 
-    sbi PORTB, L2
-    sbi PORTC, motor
+    cpi Selector, 1
+    breq LavadoL
 
-        
+    cpi Selector, 2
+    breq LavadoM
+
+    cpi Selector, 3
+    breq LavadoP
+
+LavadoL:
+    sbi PORTB, L2
+    sbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    cbi PORTC, motorR
+    rjmp delay_1s
+    dec CuentaLavado
+    brne Centrifugado
+    rjmp Lavado
+LavadoM:
+    sbi PORTB, L2
+    sbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    cbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    dec CuentaLavado
+    brne Centrifugado
+    rjmp Lavado
+LavadoP:
+    sbi PORTB, L2
+    sbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    cbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    dec CuentaLavado
+    brne Centrifugado
+    rjmp Lavado
+
+Centrifugado:
+    cpi Selector, 1
+    breq CenL
+
+    cpi Selector, 2
+    breq CenM
+
+    cpi Selector, 3
+    breq CenP
+
+CenL:
+CenM:
+CenP:
+
+
+delay_1s:
+    dec  r20
+    brne delay_1s
+    dec  r19
+    brne delay_1s
+    dec  r18
+    brne delay_1s
+    ret

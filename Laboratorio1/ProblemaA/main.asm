@@ -167,6 +167,10 @@ LavadoP:
     rjmp Lavado
 
 Centrifugado:
+    cbi PORTB, L2
+    sbi PORTB, L3
+    sbi PORTC, motorR
+
     cpi Selector, 1
     breq CenL
 
@@ -177,9 +181,162 @@ Centrifugado:
     breq CenP
 
 CenL:
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    cbi PORTC, motorR
+    rjmp Secador
 CenM:
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    cbi PORTC, motorR
+    rjmp Secador
 CenP:
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    cbi PORTC, motorR
+    rjmp Secador
 
+Secador:
+    cbi PORTB, L3
+    sbi PORTB, L4
+
+    cpi Selector, 1
+    breq SecL
+
+    cpi Selector, 2
+    breq SecM
+
+    cpi Selector, 3
+    breq SecP
+SecL:
+    sbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    cbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    sbi PORTD, motorL
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp Finalizar
+SecM:
+    sbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    cbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    sbi PORTD, motorL
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp Finalizar
+SecP:
+    sbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    cbi PORTC, motorR
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    sbi PORTD, motorL
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp Finalizar
+
+Finalizar:
+    cbi PORTD, motorL
+    cbi PORTB, L4
+    sbi PORTB, L5
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp delay_1s
+    rjmp main_loop
 
 delay_1s:
     dec  r20

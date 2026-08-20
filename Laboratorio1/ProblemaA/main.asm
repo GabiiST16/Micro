@@ -65,10 +65,10 @@ ldi  r20, 255
 
 main_loop:
     cpi Inicio, 1
+    sbi PORTB, L1
     breq Lavado_listo
     rjmp Continuar_inicio
 Lavado_listo:
-    sbi PORTB, L1
     rjmp Lavado
 
 Continuar_inicio:
@@ -107,7 +107,6 @@ leer_selector:
     sbic PINC, Ss
     rjmp main_loop
     ldi Inicio, 1
-    rjmp main_loop
 
 chequear_Psc:
     sbic PINC, Psc
@@ -117,6 +116,10 @@ chequear_Psc:
     brne esperar_soltar
     ldi Selector, 1
 
+esperar_soltar_Pi:
+    sbis PINC, Pi
+    rjmp esperar_soltar_Pi
+    rjmp main_loop
 esperar_soltar:
     sbis PINC, Psc
     rjmp esperar_soltar
@@ -126,6 +129,13 @@ Lavado:
     cbi PORTB, Ll
     cbi PORTC, Lm
     cbi PORTC, Lp
+
+espera_lleno:
+    sbic PINC, Sf
+    rjmp espera_lleno
+
+    cpi Selector, 1
+    breq LavadoL
 
     cpi Selector, 1
     breq LavadoL
@@ -137,6 +147,7 @@ Lavado:
     breq LavadoP
 
 LavadoL:
+    cbi PORTB, L1
     sbi PORTB, L2
     sbi PORTC, motorR
     rcall delay_1s
@@ -147,6 +158,7 @@ LavadoL:
     breq Centrifugado
     rjmp Lavado
 LavadoM:
+    cbi PORTB, L1
     sbi PORTB, L2
     sbi PORTC, motorR
     rcall delay_1s
@@ -159,6 +171,7 @@ LavadoM:
     breq Centrifugado
     rjmp Lavado
 LavadoP:
+    cbi PORTB, L1
     sbi PORTB, L2
     sbi PORTC, motorR
     rcall delay_1s

@@ -69,7 +69,7 @@ main_loop:
     rjmp Continuar_inicio
 Lavado_listo:
     sbi PORTB, L1
-    rjmp Continuar_inicio
+    rjmp Lavado
 
 Continuar_inicio:
     cbi PORTC, motorR
@@ -343,6 +343,8 @@ Finalizar:
     rcall delay_1s
     rcall delay_1s
     rcall delay_1s
+    ldi Inicio, 0
+    ldi CuentaLavado, 5
     rjmp main_loop
 
 delay_1s:

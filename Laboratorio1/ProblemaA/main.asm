@@ -125,17 +125,13 @@ esperar_soltar:
     rjmp esperar_soltar
     rjmp main_loop
 
+espera_lleno:
+    sbic PIND, Sf
+    rjmp espera_lleno
 Lavado:
     cbi PORTB, Ll
     cbi PORTC, Lm
     cbi PORTC, Lp
-
-espera_lleno:
-    sbic PINC, Sf
-    rjmp espera_lleno
-
-    cpi Selector, 1
-    breq LavadoL
 
     cpi Selector, 1
     breq LavadoL

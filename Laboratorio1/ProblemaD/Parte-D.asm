@@ -16,4 +16,10 @@
     .equ B0 = PD4
     .equ B1 = PD5
     .equ B2 = PD6
-    .equ B3 = PD7   
+    .equ B3 = PD7 
+;Selector
+    .equ S0 = PC0
+    .equ S1 = PC1
+    .equ S2 = PC2
+;Salidas
+ 

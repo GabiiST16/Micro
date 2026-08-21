@@ -13,10 +13,12 @@
     .equ B1 = PD5
     .equ B2 = PD6
     .equ B3 = PD7 
+
 ;Selector
     .equ S0 = PC0
     .equ S1 = PC1
     .equ S2 = PC2
+
 ;Salidas
     .equ F0 = PB0
     .equ F1 = PB1
@@ -46,6 +48,7 @@ inicio:
     out DDRB, temp
     ldi temp, 0x00
     out PORTB, temp
+
 ;Puerto C como salidas y entradas
     ldi temp 0b00111000
     out DDRC, temp

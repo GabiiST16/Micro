@@ -1,4 +1,5 @@
-.include "m328pdef.inc"
+.include "m328pdef.inc"
+
     
     .def temp = r16
 
@@ -55,3 +56,4 @@ inicio:
     ldi temp, 0x00
     out PORTC, temp
 
+FUNCIONA?

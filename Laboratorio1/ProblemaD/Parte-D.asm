@@ -46,7 +46,7 @@ inicio:
     out DDRB, temp
     ldi temp, 0x00
     out PORTB, temp
-;Puerto C como salidas
+;Puerto C como salidas y entradas
     ldi temp 0b00111000
     out DDRC, temp
     ldi temp, 0x00

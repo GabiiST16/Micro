@@ -30,6 +30,11 @@
 .cseg
 .org 0x0000
 
+ldi R16, high(RAMEND)
+out SPH, R16
+ldi R16, low(RAMEND)
+out SPL, R16
+
 ; Salidas
 
 sbi DDRB, L1
@@ -45,34 +50,37 @@ sbi DDRC, motorR
 sbi DDRD, motorL
 
 ; Entradas
-
 cbi DDRC, Pi
 cbi DDRC, Psc
 cbi DDRC, Ss
 cbi DDRD, Sf
 
-sbi PORTC, Psc
-sbi PORTC, Pi
-sbi PORTC, Ss
+cbi PORTC, Psc
+cbi PORTC, Pi
+cbi PORTC, Ss
+cbi PORTD, Sf
+
 ldi Selector, 1
 ldi Inicio, 0
 ldi CuentaLavado, 5
 
-; Variables para el delay de 1s
-ldi  r18, 82
-ldi  r19, 43
-ldi  r20, 255
-
 main_loop:
     cpi Inicio, 1
-    sbi PORTB, L1
     breq Lavado_listo
     rjmp Continuar_inicio
+
 Lavado_listo:
-    rjmp Lavado
+    rjmp espera_lleno
 
 Continuar_inicio:
+    sbi PORTB, L1
+    cbi PORTB, L2
+    cbi PORTB, L3
+    cbi PORTB, L4
+    cbi PORTB, L5
     cbi PORTC, motorR
+    cbi PORTD, motorL
+
     cbi PORTB, Ll
     cbi PORTC, Lm
     cbi PORTC, Lp
@@ -86,7 +94,8 @@ Continuar_inicio:
     cpi Selector, 3
     breq encender_Lp
     
-    rjmp leer_selector
+    ldi Selector, 1
+    rjmp encender_Ll
 
 encender_Ll:
     sbi PORTB, Ll
@@ -101,32 +110,49 @@ encender_Lp:
     rjmp leer_selector
 
 leer_selector:
-    sbic PINC, Pi
-    rjmp chequear_Psc
+    sbis PINC, Psc
+    rjmp chequear_Pi
 
-    sbic PINC, Ss
-    rjmp main_loop
-    ldi Inicio, 1
+    ; Antirrebote al presionar
+    rcall delay_debounce
+    sbis PINC, Psc
+    rjmp chequear_Pi
 
-chequear_Psc:
-    sbic PINC, Psc
-    rjmp main_loop
     inc Selector
     cpi Selector, 4
-    brne esperar_soltar
+    brne esperar_soltar_Psc
     ldi Selector, 1
 
-esperar_soltar_Pi:
+esperar_soltar_Psc:
+    sbic PINC, Psc    
+    rjmp esperar_soltar_Psc
+
+    rcall delay_debounce
+    rjmp main_loop     
+
+chequear_Pi:
     sbis PINC, Pi
-    rjmp esperar_soltar_Pi
+    rjmp main_loop      
+
+    ; Antirrebote al presionar Pi
+    rcall delay_debounce
+    sbis PINC, Pi
     rjmp main_loop
-esperar_soltar:
-    sbis PINC, Psc
-    rjmp esperar_soltar
+
+    sbis PINC, Ss
+    rjmp main_loop     
+    
+esperar_soltar_Pi:
+    sbic PINC, Pi        
+    rjmp esperar_soltar_Pi
+
+    rcall delay_debounce
+
+    ldi Inicio, 1
     rjmp main_loop
 
 espera_lleno:
-    sbic PIND, Sf
+    sbis PIND, Sf
     rjmp espera_lleno
 Lavado:
     cbi PORTB, Ll
@@ -354,13 +380,31 @@ Finalizar:
     rcall delay_1s
     ldi Inicio, 0
     ldi CuentaLavado, 5
+    cbi PORTB, L5
     rjmp main_loop
 
 delay_1s:
+    ldi  r18, 82
+    ldi  r19, 43
+    ldi  r20, 255
+delay_loop:
     dec  r20
-    brne delay_1s
+    brne delay_loop
     dec  r19
-    brne delay_1s
+    brne delay_loop
     dec  r18
-    brne delay_1s
+    brne delay_loop
+    ret
+
+delay_debounce:
+    ldi  r18, 4
+    ldi  r19, 43
+    ldi  r20, 255
+delay_deb_loop:
+    dec  r20
+    brne delay_deb_loop
+    dec  r19
+    brne delay_deb_loop
+    dec  r18
+    brne delay_deb_loop
     ret

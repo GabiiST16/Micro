@@ -75,7 +75,18 @@ main_loop:
     mov S, temp ;Guarda el valor en S
     andi S, 0x07 ;Toma solo los 3 pines de S
     rcall selector
+    
+    ;Salida a puertos
+    out PORTB, F ; F en PB0-PB3 (limpia PB4-PB5)
+    sbrc C_flag, 0
+    sbi PORTB, 4 ; C en PB4
+    sbrc Z_flag, 0
+    sbi PORTB, 5 ; Z en PB5
+    cbi PORTC, 3 ; Limpiar N primero
+    sbrc N_flag, 0
+    sbi PORTC, 3 ; N en PC3
 
+    rjmp main_loop
 
 selector:
     cpi S, 0
@@ -97,4 +108,38 @@ selector:
     ret 
 
 op_clear: 
+    clr F ;Deja F en 0
+    clr C_flag ; Dejo la bandera C en 0
+    ldi Z_flag, 1 ;Pongo la bandera Z en 1
+    clr N_flag ;Dejo la bandera N en 0
+    cbi PORTC, 3
+    out PORTB, F
+    sbrc C_flag, 0
+    sbi PORTB, 4
+    sbrc Z_flag, 0
+    sbi PORTB, 5
+    ret
 
+op_resta: ;A - B
+    mov F, A
+    sub F, B ; F = A - B (8 bits), SREG.C = borrow
+
+    ; Leo el carry del SREG (LDI y BRCC no modifican SREG)
+    ldi C_flag, 0 ; Dejo el C_flag en 0
+    brcc resta_sin_carry ; Si C=0 (no hay borrow), salta de linea
+    ldi C_flag, 1       ; No hubo salto de linea entonces pongo C en 1
+resta_sin_carry:
+    ;Dejo solo el resultado de la resta
+    andi F, 0x0F        ; ANDI pone Z=1 en SREG si F queda en 0
+
+    ;Z flag: basada en resultado de 4 bits
+    ldi Z_flag, 0 ;Dejo el Z_flag en 0
+    brne resta_sin_zero  ; Si el SREG.Z es 1, salta de linea
+    ldi Z_flag, 1 ;No hubo salto de linea entonces pongo Z en 1
+resta_sin_zero:
+
+    ;N flag: signo en bit 3
+    ldi N_flag, 0 ;Dejo el N_flag en 0
+    sbrc F, 3 ; Si bit 3 de F es 0, saltea
+    ldi N_flag, 1 ;No hubo salto de linea entonces pongo N en 1
+    ret

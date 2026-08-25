@@ -128,7 +128,7 @@ op_suma: ; A + B
     add F, B
     ; En suma de 4 bits, el carry queda en el bit 4 de F
     ldi C_flag, 0 ; Dejo el C_flag en 0
-    sbrc F, 4 ; Si el bit 4 de F es 0, saltea la siguiente linea
+    sbrc F, 4 ; Si el bit 4 de F es 0, salta de linea
     ldi C_flag, 1 ; No hubo salto de linea entonces pongo C en 1
     rjmp end_operacion
 
@@ -180,7 +180,7 @@ sin_zero:
 
     ; N flag: signo en bit 3
     ldi N_flag, 0 ; Dejo el N_flag en 0
-    sbrc F, 3 ; Si bit 3 de F es 0, saltea
+    sbrc F, 3 ; Si bit 3 de F es 0, salta de linea
     ldi N_flag, 1 ; No hubo salto de linea entonces pongo N en 1
     
     ret ; Vuelvo a main_loop

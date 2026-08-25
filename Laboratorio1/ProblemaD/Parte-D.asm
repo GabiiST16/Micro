@@ -108,19 +108,11 @@ selector:
     ret 
 
 op_clear: 
-    clr F ;Deja F en 0
-    clr C_flag ; Dejo la bandera C en 0
-    ldi Z_flag, 1 ;Pongo la bandera Z en 1
-    clr N_flag ;Dejo la bandera N en 0
-    cbi PORTC, 3
-    out PORTB, F
-    sbrc C_flag, 0
-    sbi PORTB, 4
-    sbrc Z_flag, 0
-    sbi PORTB, 5
-    ret
+    clr F ; Deja F en 0
+    clr C_flag ; No hay carry
+    rjmp end_operacion
 
-op_resta: ;A - B
+op_resta: ; A - B
     mov F, A
     sub F, B ; F = A - B (8 bits), SREG.C = borrow
 
@@ -129,17 +121,66 @@ op_resta: ;A - B
     brcc resta_sin_carry ; Si C=0 (no hay borrow), salta de linea
     ldi C_flag, 1       ; No hubo salto de linea entonces pongo C en 1
 resta_sin_carry:
-    ;Dejo solo el resultado de la resta
+    rjmp end_operacion
+
+op_suma: ; A + B
+    mov F, A 
+    add F, B
+    ; En suma de 4 bits, el carry queda en el bit 4 de F
+    ldi C_flag, 0 ; Dejo el C_flag en 0
+    sbrc F, 4 ; Si el bit 4 de F es 0, saltea la siguiente linea
+    ldi C_flag, 1 ; No hubo salto de linea entonces pongo C en 1
+    rjmp end_operacion
+
+op_xor: ; A xor B
+    mov F, A
+    eor F, B
+    clr C_flag ; No hay carry en xor
+    rjmp end_operacion
+
+op_and: ; A and B
+    mov F, A
+    and F, B
+    clr C_flag ; No hay carry en and
+    rjmp end_operacion
+
+op_or: ; A or B
+    mov F, A 
+    or F, B
+    clr C_flag ; No hay carry en or
+    rjmp end_operacion
+
+op_shl: ; A << 1
+    mov F, A
+    lsl F 
+    ldi C_flag, 0 
+    sbrc F, 4 
+    ldi C_flag, 1 
+    rjmp end_operacion
+
+op_inc: ; A + 1
+    mov F, A 
+    inc F
+    ldi C_flag, 0
+    sbrc F, 4
+    ldi C_flag, 1
+    rjmp end_operacion
+
+
+; Calculo de Z, N y retorno
+end_operacion:
+    ; Dejo solo el resultado de 4 bits
     andi F, 0x0F        ; ANDI pone Z=1 en SREG si F queda en 0
 
-    ;Z flag: basada en resultado de 4 bits
-    ldi Z_flag, 0 ;Dejo el Z_flag en 0
-    brne resta_sin_zero  ; Si el SREG.Z es 1, salta de linea
-    ldi Z_flag, 1 ;No hubo salto de linea entonces pongo Z en 1
-resta_sin_zero:
+    ; Z flag: basada en resultado de 4 bits
+    ldi Z_flag, 0 ; Dejo el Z_flag en 0
+    brne sin_zero  ; Si el SREG.Z es 1 (F != 0), salta de linea
+    ldi Z_flag, 1 ; No hubo salto de linea entonces pongo Z en 1
+sin_zero:
 
-    ;N flag: signo en bit 3
-    ldi N_flag, 0 ;Dejo el N_flag en 0
+    ; N flag: signo en bit 3
+    ldi N_flag, 0 ; Dejo el N_flag en 0
     sbrc F, 3 ; Si bit 3 de F es 0, saltea
-    ldi N_flag, 1 ;No hubo salto de linea entonces pongo N en 1
-    ret
+    ldi N_flag, 1 ; No hubo salto de linea entonces pongo N en 1
+    
+    ret ; Vuelvo a main_loop

@@ -1,300 +1,227 @@
-<<<<<<< HEAD
 .include "m328pdef.inc"
 
-.def TEMP       =R16
-.def SECUENCIA  =R17
-.def PATRON     =R18
-.def R_DELAY1   =R19
-.def R_DELAY2   =R20
-.def R_DELAY3   =R21
+.def TEMP        = R16
+.def SEQ_INDEX   = R17
+.def LED_PATTERN = R18
+.def DELAY_R1    = R19
+.def DELAY_R2    = R20
+.def DELAY_R3    = R21
 
 .org 0x0000
     rjmp RESET
 
 RESET:
-ldi TEMP, LOW (RAMEND)
-out SPL, TEMP
-ldi TEMP, HIGH (RAMEND)
-out SPH, TEMP
+    ; Configuración del Stack Pointer
+    ldi TEMP, LOW(RAMEND)
+    out SPL, TEMP
+    ldi TEMP, HIGH(RAMEND)
+    out SPH, TEMP
 
-ldi TEMP, 0xFF
-out DDRB, TEMP
-out DDRC, TEMP
+    ; PORTD como salida (8 LEDs PD0 a PD7)
+    ldi TEMP, 0xFF
+    out DDRD, TEMP
+    clr TEMP
+    out PORTD, TEMP
 
-ldi TEMP, 0x00
-out DDRD, TEMP
+    ; PORTB como entrada (Botones PB0, PB1, PB2)
+    clr TEMP
+    out DDRB, TEMP
+    out PORTB, TEMP
 
-ldi TEMP, (1<<PD2) | (1<<PD3) | (1<<PD4)
-out PORTD, TEMP
-
- ;SECUENCIA, 1
+    clr SEQ_INDEX
+    ldi LED_PATTERN, 0x01
 
 MAIN_LOOP:
-    rcall LEER_BOTONES 
-    
-    cpi SECUENCIA, 1
-    brne EJECUTAR_SEC1
-
-    cpi SECUENCIA, 2
-    brne EJECUTAR_SEC2
-
-    cpi SECUENCIA, 3
-    brne EJECUTAR_SEC3
-
-    cpi SECUENCIA, 4
-    brne EJECUTAR_SEC4
-
-   cpi SECUENCIA, 5
-brne NO_SEC5
-jmp EJECUTAR_SEC5
-NO_SEC5:
-
-   cpi SECUENCIA, 6
-brne NO_SEC6
-jmp EJECUTAR_SEC6
-NO_SEC6:
-
-   cpi SECUENCIA, 7
-brne NO_SEC7
-jmp EJECUTAR_SEC7
-NO_SEC7:
-
-   cpi SECUENCIA, 8
-brne NO_SEC8
-jmp EJECUTAR_SEC8
-NO_SEC8:
-
+    rcall LEER_BOTONES
+    rcall MOSTRAR_PASO
+    rcall DELAY_200MS
     rjmp MAIN_LOOP
-
-MOSTRAR_LEDS:
-out PORTB, PATRON
-
-mov TEMP, PATRON
-lsr TEMP
-lsr TEMP
-lsr TEMP
-lsr TEMP
-lsr TEMP
-lsr TEMP
-out PORTC, TEMP
-ret 
-
-EJECUTAR_SEC1:
-    ldi PATRON, 0b00000001
-LOOP_SEC1:
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    lsl PATRON
-    brne LOOP_SEC1
-    rjmp MAIN_LOOP
-
-EJECUTAR_SEC2:
-    ldi PATRON, 0b11110000
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b00001111
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    rjmp MAIN_LOOP
-
-EJECUTAR_SEC3:
-    ldi PATRON, 0b00011000
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b00100100
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b01000010
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b10000001
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    rjmp MAIN_LOOP
-
-EJECUTAR_SEC4:
-    ldi PATRON, 0b10101010
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b01010101
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    rjmp MAIN_LOOP
-
-EJECUTAR_SEC5:
-    ldi PATRON, 0b11000011
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b01100110
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b00111100
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b00011000
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-     rjmp MAIN_LOOP
-
-EJECUTAR_SEC6:
-    ldi PATRON, 0b10010010
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b01001001
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    
-     rjmp MAIN_LOOP
-
-EJECUTAR_SEC7:
-    ldi PATRON, 0b11111111
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b01111111
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    
-    ldi PATRON, 0b10111111
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b11011111
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b11101111
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    ldi PATRON, 0b11110111
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    ldi PATRON, 0b11111011
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    ldi PATRON, 0b11111101
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    ldi PATRON, 0b11111110
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    
-     rjmp MAIN_LOOP
-
-EJECUTAR_SEC8:
-    ldi PATRON, 0b00011000
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-
-    ldi PATRON, 0b11100111
-    rcall MOSTRAR_LEDS
-    rcall DELAY_MS
-    rcall LEER_BOTONES
-    
-     rjmp MAIN_LOOP
 
 
 LEER_BOTONES:
-    in TEMP, PIND
-        sbis PIND, PD2
-        rjmp SIGUIENTE_SEC
+    in TEMP, PINB
+    andi TEMP, 0x07       ; Máscara PB0, PB1, PB2
+    breq FIN_LEER_BOTONES
 
-        sbis PIND, PD3
-        rjmp ANTERIOR_SEC
+    rcall DELAY_20MS      ; Anti-rebote
+    in TEMP, PINB
+    andi TEMP, 0x07
+    breq FIN_LEER_BOTONES
 
-        sbis PIND, PD4
-        rjmp REINICIAR_SEC
+    ; Botón 1 (PB0): Avanzar
+    sbrc TEMP, 0
+    rjmp BTN_NEXT
 
-ret
+    ; Botón 2 (PB1): Retroceder
+    sbrc TEMP, 1
+    rjmp BTN_PREV
 
-SIGUIENTE_SEC:
-    rcall ANTI_REBOTE
-    inc SECUENCIA
-    cpi SECUENCIA, 9
-    brne FIN_BOTONES
-    ldi SECUENCIA, 1
-    rjmp FIN_BOTONES
+    ; Botón 3 (PB2): Reiniciar
+    sbrc TEMP, 2
+    rjmp BTN_RESET
 
-ANTERIOR_SEC:
-    rcall ANTI_REBOTE
-    inc SECUENCIA
-	cpi SECUENCIA, 0
-    brne FIN_BOTONES
-    ldi SECUENCIA, 8
-    rjmp FIN_BOTONES
+    rjmp FIN_LEER_BOTONES
 
-REINICIAR_SEC:
-    rcall ANTI_REBOTE
-    ldi SECUENCIA, 1
+BTN_NEXT:
+    inc SEQ_INDEX
+    cpi SEQ_INDEX, 8      ; Ahora son 8 secuencias (0 a 7)
+    brne REINICIAR_PATRON
+    clr SEQ_INDEX
+    rjmp REINICIAR_PATRON
 
-FIN_BOTONES:
-pop TEMP
-pop TEMP
-rjmp MAIN_LOOP
+BTN_PREV:
+    tst SEQ_INDEX
+    brne DEC_SEQ
+    ldi SEQ_INDEX, 7      ; Regresa a la secuencia 7
+    rjmp REINICIAR_PATRON
+DEC_SEQ:
+    dec SEQ_INDEX
+    rjmp REINICIAR_PATRON
 
-ANTI_REBOTE:
-    ldi R_DELAY1, 100
-    ldi R_DELAY2, 200
-L_DEBOUNCE:
-    dec R_DELAY2
-    brne L_DEBOUNCE
-    dec R_DELAY1
-    brne L_DEBOUNCE
+BTN_RESET:
+    clr SEQ_INDEX
+
+REINICIAR_PATRON:
+    ldi LED_PATTERN, 0x01
+
+FIN_LEER_BOTONES:
     ret
 
-DELAY_CORTO:
-    ldi R_DELAY1, 2
-    ldi R_DELAY2, 150
-    ldi R_DELAY3, 150
-    rjmp L_DELAY
 
-DELAY_MS:
-    ldi R_DELAY1, 6
-    ldi R_DELAY2, 200
-    ldi R_DELAY3, 200
-
-L_DELAY:
-    dec R_DELAY3
-    brne L_DELAY
-    dec R_DELAY2
-    brne L_DELAY
-    dec R_DELAY1
-    brne L_DELAY
+MOSTRAR_PASO:
+    cpi SEQ_INDEX, 0
+    breq EXEC_SEQ1
+    cpi SEQ_INDEX, 1
+    breq EXEC_SEQ2
+    cpi SEQ_INDEX, 2
+    breq EXEC_SEQ3
+    cpi SEQ_INDEX, 3
+    breq EXEC_SEQ4
+    cpi SEQ_INDEX, 4
+    breq EXEC_SEQ5
+    cpi SEQ_INDEX, 5
+    breq EXEC_SEQ6
+    cpi SEQ_INDEX, 6
+    breq EXEC_SEQ7
+    cpi SEQ_INDEX, 7
+    breq EXEC_SEQ8
     ret
 
+; --- Secuencia 1: Auto Fantástico (Izq) ---
+EXEC_SEQ1:
+    out PORTD, LED_PATTERN
+    lsl LED_PATTERN
+    brne FIN_PASO
+    ldi LED_PATTERN, 0x01
+FIN_PASO:
+    ret
+
+; --- Secuencia 2: Alternado Par / Impar ---
+EXEC_SEQ2:
+    cpi LED_PATTERN, 0xAA
+    breq SET_55
+    ldi LED_PATTERN, 0xAA
+    rjmp WRITE_SEQ
+SET_55:
+    ldi LED_PATTERN, 0x55
+WRITE_SEQ:
+    out PORTD, LED_PATTERN
+    ret
+
+; --- Secuencia 3: Extremos al Centro ---
+EXEC_SEQ3:
+    cpi LED_PATTERN, 0x81
+    breq S3_STEP2
+    cpi LED_PATTERN, 0xC3
+    breq S3_STEP3
+    cpi LED_PATTERN, 0xE7
+    breq S3_STEP4
+    ldi LED_PATTERN, 0x81
+    rjmp WRITE_SEQ
+S3_STEP2:
+    ldi LED_PATTERN, 0xC3
+    rjmp WRITE_SEQ
+S3_STEP3:
+    ldi LED_PATTERN, 0xE7
+    rjmp WRITE_SEQ
+S3_STEP4:
+    ldi LED_PATTERN, 0xFF
+    rjmp WRITE_SEQ
+
+; --- Secuencia 4: Parpadeo General ---
+EXEC_SEQ4:
+    com LED_PATTERN
+    out PORTD, LED_PATTERN
+    ret
+
+; --- Secuencia 5: Auto Fantástico Inverso (Der) ---
+EXEC_SEQ5:
+    cpi LED_PATTERN, 0x01
+    breq S5_INIT
+    lsr LED_PATTERN
+    out PORTD, LED_PATTERN
+    ret
+S5_INIT:
+    ldi LED_PATTERN, 0x80
+    out PORTD, LED_PATTERN
+    ret
+
+; --- Secuencia 6: Llenado Progresivo (Barra) ---
+EXEC_SEQ6:
+    out PORTD, LED_PATTERN
+    sec                   ; Set Carry
+    rol LED_PATTERN
+    brne FIN_S6
+    ldi LED_PATTERN, 0x01
+FIN_S6:
+    ret
+
+; --- Secuencia 7: Centro hacia los Extremos ---
+EXEC_SEQ7:
+    cpi LED_PATTERN, 0x18
+    breq S7_STEP2
+    cpi LED_PATTERN, 0x3C
+    breq S7_STEP3
+    cpi LED_PATTERN, 0x7E
+    breq S7_STEP4
+    ldi LED_PATTERN, 0x18
+    rjmp WRITE_SEQ
+S7_STEP2:
+    ldi LED_PATTERN, 0x3C
+    rjmp WRITE_SEQ
+S7_STEP3:
+    ldi LED_PATTERN, 0x7E
+    rjmp WRITE_SEQ
+S7_STEP4:
+    ldi LED_PATTERN, 0xFF
+    rjmp WRITE_SEQ
+
+; --- Secuencia 8: Bloques de 4 LEDs (Nibbles) ---
+EXEC_SEQ8:
+    cpi LED_PATTERN, 0xF0
+    breq SET_0F
+    ldi LED_PATTERN, 0xF0
+    rjmp WRITE_SEQ
+SET_0F:
+    ldi LED_PATTERN, 0x0F
+    rjmp WRITE_SEQ
+
+
+DELAY_20MS:
+    ldi DELAY_R1, 80
+D20_1:
+    ldi DELAY_R2, 200
+D20_2:
+    dec DELAY_R2
+    brne D20_2
+    dec DELAY_R1
+    brne D20_1
+    ret
+
+DELAY_200MS:
+    ldi DELAY_R3, 75
+D200_3:
+    rcall DELAY_20MS
+    dec DELAY_R3
+    brne D200_3
+    ret

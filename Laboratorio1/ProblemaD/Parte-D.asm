@@ -31,9 +31,9 @@
     .equ F1 = PB1
     .equ F2 = PB2
     .equ F3 = PB3
-    .equ C = PB4
-    .equ Z = PB5
-    .equ N = PC3
+    .equ OUT_C = PB4
+    .equ OUT_Z = PB5
+    .equ OUT_N = PC3
 
 .org 0x0000
     rjmp inicio 
@@ -79,12 +79,12 @@ main_loop:
     ;Salida a puertos
     out PORTB, F ; F en PB0-PB3 (limpia PB4-PB5)
     sbrc C_flag, 0
-    sbi PORTB, 4 ; C en PB4
+    sbi PORTB, OUT_C ; C en PB4
     sbrc Z_flag, 0
-    sbi PORTB, 5 ; Z en PB5
-    cbi PORTC, 3 ; Limpiar N primero
+    sbi PORTB, OUT_Z ; Z en PB5
+    cbi PORTC, OUT_N ; Limpiar N primero
     sbrc N_flag, 0
-    sbi PORTC, 3 ; N en PC3
+    sbi PORTC, OUT_N ; N en PC3
 
     rjmp main_loop
 

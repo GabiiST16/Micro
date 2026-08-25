@@ -2,7 +2,13 @@
 
     
     .def temp = r16
-
+    .def A = r17
+    .def B = r18
+    .def S = r19
+    .def F = r20
+    .def C_flag = r21
+    .def Z_flag = r22
+    .def N_flag = r23
 ;Operador A
     .equ A0 = PD0
     .equ A1 = PD1
@@ -51,9 +57,44 @@ inicio:
     out PORTB, temp
 
 ;Puerto C como salidas y entradas
-    ldi temp 0b00111000
+    ldi temp, 0b00001000
     out DDRC, temp
     ldi temp, 0x00
     out PORTC, temp
 
-FUNCIONA?
+
+main_loop: 
+;Lectura constante
+    in temp, PIND ;Lee los 8 pines de D (A y B juntos)
+    mov A, temp ;Guarda el valor en A
+    andi A, 0x0F ;Toma solo los 4 pines de A
+    mov B, temp ;Guarda el valor en B
+    andi B, 0xF0 ;Toma solo los 4 pines de B
+    swap B ;Invierte B para tenerlo en orden
+    in temp, PINC ;Lee los pines de C
+    mov S, temp ;Guarda el valor en S
+    andi S, 0x07 ;Toma solo los 3 pines de S
+    rcall selector
+
+
+selector:
+    cpi S, 0
+    breq op_clear
+    cpi S, 1 
+    breq op_resta
+    cpi S, 2
+    breq op_suma
+    cpi S, 3 
+    breq op_xor
+    cpi S, 4 
+    breq op_and
+    cpi S, 5
+    breq op_or
+    cpi S, 6
+    breq op_shl
+    cpi S, 7
+    breq op_inc
+    ret 
+
+op_clear: 
+

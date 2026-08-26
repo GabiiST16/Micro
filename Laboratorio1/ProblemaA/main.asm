@@ -21,7 +21,7 @@
 .equ Pi = PC3
 .equ Psc = PC4
 .equ Ss = PC5
-.equ Sf = PD0
+.equ Sf = PD2
 
 .def Inicio = R17
 .def Selector = R16
@@ -141,6 +141,9 @@ chequear_Pi:
 
     sbis PINC, Ss
     rjmp main_loop     
+
+    sbis PIND, Sf
+    rjmp main_loop     
     
 esperar_soltar_Pi:
     sbic PINC, Pi        
@@ -155,9 +158,6 @@ espera_lleno:
     sbis PIND, Sf
     rjmp espera_lleno
 Lavado:
-    cbi PORTB, Ll
-    cbi PORTC, Lm
-    cbi PORTC, Lp
 
     cpi Selector, 1
     breq LavadoL

@@ -123,45 +123,46 @@ mostrar_display:
     ret
 
 mostrar_0:
-    ldi temp, 0x3F       ; a,b,c,d,e,f prendidos
+    ldi temp, 0x40       ; a,b,c,d,e,f encendidos 
     out PORTD, temp
     ret
 mostrar_1:
-    ldi temp, 0x06       ; b,c prendidos
+    ldi temp, 0x79       ;  b,c encendidos 
     out PORTD, temp
     ret
 mostrar_2:
-    ldi temp, 0x5B       ; a,b,d,e,g prendidos
+    ldi temp, 0x24       ; a,b,d,e,g encendidos 
     out PORTD, temp
     ret
 mostrar_3:
-    ldi temp, 0x4F       ; a,b,c,d,g prendidos
+    ldi temp, 0x30       ; a,b,c,d,g encendidos 
     out PORTD, temp
     ret
 mostrar_4:
-    ldi temp, 0x66       ; b,c,f,g prendidos
+    ldi temp, 0x19       ; b,c,f,g encendidos 
     out PORTD, temp
     ret
 mostrar_5:
-    ldi temp, 0x6D       ; a,c,d,f,g prendidos
+    ldi temp, 0x12       ; a,c,d,f,g encendidos 
     out PORTD, temp
     ret
 mostrar_6:
-    ldi temp, 0x7D       ; a,c,d,e,f,g prendidos
+    ldi temp, 0x02       ; a,c,d,e,f,g encendidos 
     out PORTD, temp
     ret
 mostrar_7:
-    ldi temp, 0x07       ; a,b,c prendidos
+    ldi temp, 0x78       ; a,b,c encendidos 
     out PORTD, temp
     ret
 mostrar_8:
-    ldi temp, 0x7F       ; todos prendidos
+    ldi temp, 0x00       ; todos encendidos 
     out PORTD, temp
     ret
 mostrar_9:
-    ldi temp, 0x6F       ; a,b,c,d,f,g prendidos
+    ldi temp, 0x10       ; a,b,c,d,f,g encendidos 
     out PORTD, temp
     ret
+
 
 ;Subrutina: delay para antirrebote (~20ms a 16MHz)
 delay_debounce:

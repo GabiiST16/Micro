@@ -123,11 +123,11 @@ mostrar_display:
     ret
 
 mostrar_0:
-    ldi temp, 0x40       ; g encendido(1), resto apagados(0) -> a,b,c,d,e,f prendidos
+    ldi temp, 0x40       ; a,b,c,d,e,f prendidos
     out PORTD, temp
     ret
 mostrar_1:
-    ldi temp, 0x79       ; solo b,c prendidos
+    ldi temp, 0x79       ; b,c prendidos
     out PORTD, temp
     ret
 mostrar_2:

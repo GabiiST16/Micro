@@ -143,16 +143,24 @@ mostrar_4:
     out PORTD, temp
     ret
 mostrar_5:
+    ldi temp, 0x12       ; a,c,d,f,g prendidos
+    out PORTD, temp
     ret
 mostrar_6:
+    ldi temp, 0x02       ; a,c,d,e,f,g prendidos
+    out PORTD, temp
     ret
 mostrar_7:
+    ldi temp, 0x78       ; a,b,c prendidos
+    out PORTD, temp
     ret
 mostrar_8:
-
+    ldi temp, 0x00       ; todos prendidos
+    out PORTD, temp
     ret
 mostrar_9:
-
+    ldi temp, 0x10       ; a,b,c,d,f,g prendidos
+    out PORTD, temp
     ret
 
 ;Subrutina: delay para antirrebote (~20ms a 16MHz)

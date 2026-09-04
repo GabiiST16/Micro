@@ -1,11 +1,4 @@
-; ==============================================================================
-; UNIVERSIDAD / ASIGNATURA: MICROCONTROLADORES
-; EVALUACIÓN CONTINUA 4 (Ev4)
-; VERSIÓN: MATRIZ DIRECTA (16 cables sin controlador)
-; MICROCONTROLADOR: ATmega328P
-; MATRIZ DE LEDS: 1088AS (Cátodo en Fila, Ánodo en Columna)
-; FRECUENCIA DE RELOJ: 16 MHz
-; ==============================================================================
+
 .equ MATRIZ_1088AS  = 1
 
 .include "m328pdef.inc"

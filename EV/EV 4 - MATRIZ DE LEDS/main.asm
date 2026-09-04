@@ -1,5 +1,3 @@
-.equ MATRIZ_1088AS  = 1
-
 .include "m328pdef.inc"
 
 .def temp           = r16
@@ -7,13 +5,26 @@
 .def Pareja         = r18
 .def SubFigura      = r19
 .def FiguraActual   = r20
-.def row_mask       = r21
-.def row_counter    = r22
+.def spi_data       = r21
+.def bit_count      = r22
 .def btn_history    = r23
 .def row_data       = r24
 
+
+.equ CS_PIN         = PB2
+.equ DIN_PIN        = PB3
+.equ CLK_PIN        = PB5
+
 .equ BTN1_PIN       = PC4
 .equ BTN2_PIN       = PC5
+
+.equ MAX_DIGIT0     = 0x01
+.equ MAX_DIGIT7     = 0x08
+.equ MAX_DECODE     = 0x09
+.equ MAX_INTENSITY  = 0x0A
+.equ MAX_SCANLIMIT  = 0x0B
+.equ MAX_SHUTDOWN   = 0x0C
+.equ MAX_DISPTEST   = 0x0F
 
 .cseg
 .org 0x0000
@@ -25,52 +36,41 @@ inicio:
     ldi temp, LOW(RAMEND)
     out SPL, temp
 
-    ldi temp, 0xFF
-    out DDRD, temp
-
-.if MATRIZ_1088AS == 1
-    ldi temp, 0xFF
-    out PORTD, temp
-
-    ldi temp, 0x0F
+    ldi temp, (1<<CS_PIN) | (1<<DIN_PIN) | (1<<CLK_PIN)
     out DDRB, temp
-    in temp, PORTB
-    andi temp, 0xF0
+
+    ldi temp, (1<<CS_PIN)
     out PORTB, temp
 
-    ldi temp, 0b00001111
-    out DDRC, temp
-    ldi temp, 0b00110000
-    out PORTC, temp
-.else
     ldi temp, 0x00
-    out PORTD, temp
-
-    ldi temp, 0x0F
-    out DDRB, temp
-    in temp, PORTB
-    ori temp, 0x0F
-    out PORTB, temp
-
-    ldi temp, 0b00001111
     out DDRC, temp
-    ldi temp, 0b00111111
+    ldi temp, (1<<BTN1_PIN) | (1<<BTN2_PIN)
     out PORTC, temp
-.endif
+
+    rcall max7219_init
 
     ldi Pareja, 0
     ldi SubFigura, 0
+    ldi FiguraActual, 0
     ldi btn_history, 0
+
+    rcall enviar_figura
 
 main_loop:
     rcall leer_botones
 
-    mov FiguraActual, Pareja
-    lsl FiguraActual
-    add FiguraActual, SubFigura
+    mov temp, Pareja
+    lsl temp
+    add temp, SubFigura
 
-    rcall mostrar_cuadro
+    cp temp, FiguraActual
+    breq no_cambio
 
+    mov FiguraActual, temp
+    rcall enviar_figura
+
+no_cambio:
+    rcall delay_debounce
     rjmp main_loop
 
 leer_botones:
@@ -85,15 +85,14 @@ leer_botones:
     sbr btn_history, (1<<0)
     inc Pareja
     cpi Pareja, 3
-    brne fin_b1
+    brne chequear_boton2
     ldi Pareja, 0
-fin_b1:
     rjmp chequear_boton2
 
 b1_no_presionado:
     cbr btn_history, (1<<0)
-
 chequear_boton2:
+
     sbrc temp, BTN2_PIN
     rjmp b2_no_presionado
 
@@ -111,7 +110,7 @@ b2_no_presionado:
 fin_botones:
     ret
 
-mostrar_cuadro:
+enviar_figura:
     ldi ZL, low(tabla_figuras * 2)
     ldi ZH, high(tabla_figuras * 2)
 
@@ -123,72 +122,102 @@ mostrar_cuadro:
     clr temp
     adc ZH, temp
 
-    ldi row_mask, 0b00000001
-    ldi row_counter, 8
+    ldi temp2, MAX_DIGIT0
 
-scan_loop:
+enviar_fila_loop:
     lpm row_data, Z+
-
-.if MATRIZ_1088AS == 1
-.else
-    com row_data
-.endif
-
-    in temp, PORTB
-    andi temp, 0xF0
-    mov temp2, row_data
-    andi temp2, 0x0F
-    or temp, temp2
-    out PORTB, temp
-
-    in temp, PORTC
-    andi temp, 0xF0
-    mov temp2, row_data
-    swap temp2
-    andi temp2, 0x0F
-    or temp, temp2
-    out PORTC, temp
-
-.if MATRIZ_1088AS == 1
-    mov temp, row_mask
-    com temp
-    out PORTD, temp
-.else
-    out PORTD, row_mask
-.endif
-
-    rcall delay_fila
-
-.if MATRIZ_1088AS == 1
-    ldi temp, 0xFF
-    out PORTD, temp
-.else
-    ldi temp, 0x00
-    out PORTD, temp
-.endif
-
-    lsl row_mask
-    dec row_counter
-    brne scan_loop
+    mov spi_data, temp2
+    rcall max7219_send
+    inc temp2
+    cpi temp2, MAX_DIGIT7 + 1
+    brne enviar_fila_loop
 
     ret
 
-delay_fila:
+max7219_init:
+    ldi spi_data, MAX_DISPTEST
+    ldi row_data, 0x00
+    rcall max7219_send
+
+    ldi spi_data, MAX_DECODE
+    ldi row_data, 0x00
+    rcall max7219_send
+
+    ldi spi_data, MAX_SCANLIMIT
+    ldi row_data, 0x07
+    rcall max7219_send
+
+    ldi spi_data, MAX_INTENSITY
+    ldi row_data, 0x07
+    rcall max7219_send
+
+    ldi spi_data, MAX_SHUTDOWN
+    ldi row_data, 0x01
+    rcall max7219_send
+
+    ldi spi_data, MAX_DIGIT0
+    ldi row_data, 0x00
+clear_loop:
+    rcall max7219_send
+    inc spi_data
+    cpi spi_data, MAX_DIGIT7 + 1
+    brne clear_loop
+
+    ret
+
+max7219_send:
+    cbi PORTB, CS_PIN
+
+    push spi_data
+    ldi bit_count, 8
+send_addr_bit:
+    cbi PORTB, DIN_PIN
+    sbrc spi_data, 7
+    sbi PORTB, DIN_PIN
+    sbi PORTB, CLK_PIN
+    cbi PORTB, CLK_PIN
+    lsl spi_data
+    dec bit_count
+    brne send_addr_bit
+    pop spi_data
+
+    push row_data
+    ldi bit_count, 8
+send_data_bit:
+    cbi PORTB, DIN_PIN
+    sbrc row_data, 7
+    sbi PORTB, DIN_PIN
+    sbi PORTB, CLK_PIN
+    cbi PORTB, CLK_PIN
+    lsl row_data
+    dec bit_count
+    brne send_data_bit
+    pop row_data
+
+    sbi PORTB, CS_PIN
+    ret
+
+delay_debounce:
     push r25
     push r26
-    ldi r25, 25
-delay_outer:
-    ldi r26, 255
-delay_inner:
+    push r27
+    ldi r27, 4
+deb_outer2:
+    ldi r25, 100
+deb_outer:
+    ldi r26, 200
+deb_inner:
     dec r26
-    brne delay_inner
+    brne deb_inner
     dec r25
-    brne delay_outer
+    brne deb_outer
+    dec r27
+    brne deb_outer2
+    pop r27
     pop r26
     pop r25
     ret
 
-.align 2
 tabla_figuras:
     ; FIGURA 0: Carita sonriendo
     .db 0b00111100, 0b01000010

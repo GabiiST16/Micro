@@ -3,7 +3,7 @@
 ; Configuración USART
 .equ baud = 9600
 .equ F_CPU = 16000000
-.equ bps = (F_CPU/(16*baud))-1
+.equ bps = 103        ; (F_CPU/(16*baud))-1
 
     .def temp = r16
     .def dato = r17
@@ -11,7 +11,7 @@
 ; Tabla de vectores de interrupción
 .org 0x0000
     rjmp inicio             ; Reset
-.org 0x0024
+.org URXCaddr
     rjmp USART_RX_ISR       ; Interrupción USART RX Complete
 
 inicio:

@@ -3,7 +3,7 @@
 ; Configuración USART
 .equ baud = 9600
 .equ F_CPU = 16000000
-.equ bps = (F_CPU/(16*baud))-1
+.equ bps = 103        ; (F_CPU/(16*baud))-1
 
 ; Pulsadores (Puerto B)
 .equ BTN0 = PB0       ; Pin 8  (Bit 0)
@@ -27,10 +27,10 @@ inicio:
     ldi temp, 0b00000010
     out DDRD, temp
 
-; Puerto B como entradas (botones)
-    ldi temp, 0x00
+; Puerto B como entradas (botones) y PB5 (LED) como salida
+    ldi temp, 0b00100000    ; PB5 como salida, resto como entrada
     out DDRB, temp
-    ldi temp, 0x0F          ; Pull-ups en PB0, PB1, PB2, PB3
+    ldi temp, 0b00001111    ; Pull-ups en PB0-PB3, PB5 arranca en 0 (apagado)
     out PORTB, temp
 
     rcall initUART
@@ -43,15 +43,25 @@ main_loop:
     rcall delay_debounce
     sbic PINB, BTN_ENV      ; confirmar que sigue presionado
     rjmp main_loop
+    
     ; Leer los 3 botones y armar valor
     in dato, PINB
+    
+    ; DEBUG: Encender LED 13 (PB5) para confirmar que se detectó el botón
+    sbi PORTB, 5
+
     com dato                ; invertir (presionado = 1)
     andi dato, 0x07         ; solo bits 0, 1, 2
     rcall enviarUART
+    
     ; Esperar que suelte BTN_ENV
 esperar_soltar:
-    sbis PINB, BTN_ENV
+    sbis PINB, BTN_ENV      ; si está en 1 (suelto), salta el rjmp
     rjmp esperar_soltar
+    
+    ; DEBUG: Apagar LED 13
+    cbi PORTB, 5
+    
     rcall delay_debounce
     rjmp main_loop
 

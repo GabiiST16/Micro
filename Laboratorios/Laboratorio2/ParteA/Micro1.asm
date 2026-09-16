@@ -11,8 +11,8 @@
 .equ BTN2 = PB2       ; Pin 10 (Bit 2)
 .equ BTN_ENV = PB3    ; Pin 11 (Botón de enviar)
 
-    .def temp = r16
-    .def dato = r17
+.def temp = r16
+.def dato = r17
 
 .org 0x0000
     rjmp inicio
@@ -38,6 +38,21 @@ inicio:
     rjmp main_loop
 
 main_loop:
+    sbic PINB, BTN_ENV      ; ¿PB3 = 0 (presionado)? salta
+    rjmp main_loop
+    rcall delay_debounce
+    sbic PINB, BTN_ENV      ; confirmar que sigue presionado
+    rjmp main_loop
+    ; Leer los 3 botones y armar valor
+    in dato, PINB
+    com dato                ; invertir (presionado = 1)
+    andi dato, 0x07         ; solo bits 0, 1, 2
+    rcall enviarUART
+    ; Esperar que suelte BTN_ENV
+esperar_soltar:
+    sbis PINB, BTN_ENV
+    rjmp esperar_soltar
+    rcall delay_debounce
     rjmp main_loop
 
 ; Inicialización de USART (solo TX)
@@ -50,4 +65,27 @@ initUART:
     sts UCSR0B, temp
     ldi temp, (1<<UCSZ01)|(1<<UCSZ00)  ; 8 bits datos, 1 stop, sin paridad
     sts UCSR0C, temp
+    ret
+    
+enviarUART:
+    lds temp, UCSR0A
+    sbrs temp, UDRE0        ; ¿buffer vacío? salta
+    rjmp enviarUART
+    sts UDR0, dato
+    ret
+
+; Antirrebote (~20ms a 16MHz)
+delay_debounce:
+    ldi r18, 2
+deb_l1:
+    ldi r19, 210
+deb_l2:
+    ldi r20, 255
+deb_l3:
+    dec r20
+    brne deb_l3
+    dec r19
+    brne deb_l2
+    dec r18
+    brne deb_l1
     ret

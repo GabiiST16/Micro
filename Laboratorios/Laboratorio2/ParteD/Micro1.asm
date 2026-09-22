@@ -24,7 +24,7 @@ inicio:
     out SPL, temp
 
 ; Puerto D: PD1 (TX) como salida
-    ldi temp, 0b00000010
+    ldi temp, 0b00000010000
     out DDRD, temp
 
 ; Puerto B como entradas (botones) y PB5 (LED) como salida

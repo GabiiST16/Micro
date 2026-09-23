@@ -1,30 +1,3 @@
-; ==============================================================================
-; UNIVERSIDAD TECNOLÓGICA (UTEC) - INGENIERÍA MECATRÓNICA
-; UNIDAD CURRICULAR: TECNOLOGÍAS DE MICROPROCESAMIENTO - 2026
-; 2DO LABORATORIO - PROBLEMA C: CONTROL DE PLOTTER CON ATmega328P Y PLC
-; 
-; GRUPO 16:
-;   - Gabriel González
-;   - Facundo Rodríguez
-;   - Jacinto Carbone
-;
-; POKÉMON ASIGNADO: Cubone (#104) - Tipo Tierra
-; "Cabeza redondeada + hueso/hacha. Silueta reconocible con pocos trazos."
-;
-; MICROCONTROLADOR: ATmega328P (F_CPU = 16 MHz)
-; COMUNICACIÓN: USART (9600 Baudios, 8 bits, 1 stop, sin paridad)
-; ==============================================================================
-; MAPEO REAL DE PINES HACIA EL PLC (A través de Módulos de Relés / Optos):
-;   PD0 (D0) -> USART RX (Entrada serie desde PC)
-;   PD1 (D1) -> USART TX (Salida serie hacia PC)
-;   PD2 (D2) -> Bajar solenoide neumático (Entrada X0 del PLC)
-;   PD3 (D3) -> Subir solenoide neumático (Entrada X1 del PLC)
-;   PD4 (D4) -> Movimiento hacia ABAJO    (Entrada X5 del PLC)
-;   PD5 (D5) -> Movimiento hacia ARRIBA   (Entrada X6 del PLC)
-;   PD6 (D6) -> Movimiento hacia DERECHA  (Entrada X7 del PLC)
-;   PD7 (D7) -> Movimiento hacia IZQUIERDA(Entrada X10 del PLC)
-; ==============================================================================
-
 .include "m328pdef.inc"
 
 ; ------------------------------------------------------------------------------
@@ -63,11 +36,11 @@
 .equ MASK_USART     = 0b00000011
 
 ; ------------------------------------------------------------------------------
-; CALIBRACIÓN DE VIAJE HACIA EL CENTRO DE LA HOJA A4 (Desde Home en esquina sup. der.)
-; Cada paso = ~150 ms
+; CALIBRACIÓN DE VIAJE HACIA EL CENTRO DE LA HOJA A4
+; Cada paso = 150 ms
 ; ------------------------------------------------------------------------------
-.equ PASOS_CENTRO_X = 70                     ; Desplazamiento a la IZQUIERDA (PD7)
-.equ PASOS_CENTRO_Y = 50                     ; Desplazamiento hacia ABAJO (PD4)
+.equ PASOS_CENTRO_X = 70
+.equ PASOS_CENTRO_Y = 50
 
 ; ------------------------------------------------------------------------------
 ; DEFINICIÓN DE REGISTROS DE TRABAJO
@@ -92,76 +65,30 @@
 ; INICIALIZACIÓN DEL SISTEMA
 ; ==============================================================================
 RESET_HANDLER:
-    ; 0. Capturar causa del Reset en r15 y limpiar flags de hardware
-    in r15, MCUSR
-    ldi temp, 0
-    out MCUSR, temp
-
-    ; 1. Configuración del Stack Pointer
     ldi temp, HIGH(RAMEND)
     out SPH, temp
     ldi temp, LOW(RAMEND)
     out SPL, temp
 
-    ; 2. Configurar pines de salida en PORTD (D2 a D7 como salidas)
     ldi temp, 0b11111110
     out DDRD, temp
 
-    ; 3. Estado inicial seguro: motores apagados y bobinas inactivas
     in temp, PORTD
     andi temp, MASK_USART
     out PORTD, temp
 
-    ; 4. Inicializar módulo USART
     rcall USART_INIT
 
-    ; 4b. Diagnóstico de la causa del Reset (Telemetría para detectar caídas de 5V)
-    sbrc r15, 2                     ; Bit 2 = BORF (Brown-out Reset)
-    rjmp RST_DIAG_BOR
-    sbrc r15, 1                     ; Bit 1 = EXTRF (External Reset / Ruido en pin reset)
-    rjmp RST_DIAG_EXT
-    sbrc r15, 0                     ; Bit 0 = PORF (Power-on Reset)
-    rjmp RST_DIAG_POR
-    sbrc r15, 3                     ; Bit 3 = WDRF (Watchdog)
-    rjmp RST_DIAG_WDT
-    rjmp RST_DIAG_CONT
-
-RST_DIAG_BOR:
-    ldi ZL, LOW(STR_RST_BOR * 2)
-    ldi ZH, HIGH(STR_RST_BOR * 2)
-    rcall USART_PRINT_FLASH
-    rjmp RST_DIAG_CONT
-
-RST_DIAG_EXT:
-    ldi ZL, LOW(STR_RST_EXT * 2)
-    ldi ZH, HIGH(STR_RST_EXT * 2)
-    rcall USART_PRINT_FLASH
-    rjmp RST_DIAG_CONT
-
-RST_DIAG_POR:
-    ldi ZL, LOW(STR_RST_POR * 2)
-    ldi ZH, HIGH(STR_RST_POR * 2)
-    rcall USART_PRINT_FLASH
-    rjmp RST_DIAG_CONT
-
-RST_DIAG_WDT:
-    ldi ZL, LOW(STR_RST_WDT * 2)
-    ldi ZH, HIGH(STR_RST_WDT * 2)
-    rcall USART_PRINT_FLASH
-
-RST_DIAG_CONT:
-    ; 5. Levantar el lápiz por seguridad al arrancar
     rcall SUBIR_LAPIZ
     rcall DELAY_500MS
 
-    ; 6. Mostrar menú principal
     rcall MOSTRAR_MENU
 
 ; ==============================================================================
-; BUCLE PRINCIPAL (DESPACHADOR DE COMANDOS DEL MENÚ)
+; BUCLE PRINCIPAL
 ; ==============================================================================
 MAIN_LOOP:
-    rcall USART_RX                          ; Esperar comando del usuario
+    rcall USART_RX      ; Esperar comando del usuario
     mov rx_char, temp
 
     cpi rx_char, '1'
@@ -193,43 +120,38 @@ MAIN_LOOP:
 
     rjmp MAIN_LOOP
 
-; --- Saltos intermedios para opciones ---
 CMD_TRIANGULO:
-    rcall VIAJAR_ESQ_SUP_DER
+    rcall VIAJAR_AL_CENTRO
     rcall DIBUJAR_TRIANGULO
-    rcall RETORNAR_ESQ_SUP_DER
     rcall MOSTRAR_MENU
     rjmp MAIN_LOOP
 
 CMD_CIRCULO:
-    rcall VIAJAR_ESQ_SUP_IZQ
+    rcall VIAJAR_AL_CENTRO
     rcall DIBUJAR_CIRCULO
-    rcall RETORNAR_ESQ_SUP_IZQ
     rcall MOSTRAR_MENU
     rjmp MAIN_LOOP
 
 CMD_PENTAGRAMA:
-    rcall VIAJAR_ESQ_INF_IZQ
+    rcall VIAJAR_AL_CENTRO
     rcall DIBUJAR_PENTAGRAMA
-    rcall RETORNAR_ESQ_INF_IZQ
     rcall MOSTRAR_MENU
     rjmp MAIN_LOOP
 
 CMD_LIBRE:
-    rcall VIAJAR_ESQ_INF_DER
+    rcall VIAJAR_AL_CENTRO
     rcall DIBUJAR_LIBRE_CASA
-    rcall RETORNAR_ESQ_INF_DER
     rcall MOSTRAR_MENU
     rjmp MAIN_LOOP
 
 CMD_POKEMON:
     rcall VIAJAR_AL_CENTRO
     rcall DIBUJAR_CUBONE
-    rcall RETORNAR_DEL_CENTRO
     rcall MOSTRAR_MENU
     rjmp MAIN_LOOP
 
 CMD_TODAS:
+    rcall VIAJAR_AL_CENTRO
     rcall DIBUJAR_TODAS
     rcall MOSTRAR_MENU
     rjmp MAIN_LOOP
@@ -240,21 +162,23 @@ CMD_PERSONALIZADO:
     rjmp MAIN_LOOP
 
 ; ==============================================================================
-; SUBRUTINAS DE CONTROL DE HARDWARE DEL PLOTTER
+; SUBRUTINAS DE CONTROL
 ; ==============================================================================
 
 ; ------------------------------------------------------------------------------
-; SUBIR_LAPIZ: Desactiva bajada (X0) y activa subida (X1, D3) con pulso de 100ms
+; SUBIR_LAPIZ
 ; ------------------------------------------------------------------------------
 SUBIR_LAPIZ:
-    rcall DELAY_CONMUTACION                 ; Estabilizar tension antes del pulso
-
     in temp, PORTD
-    cbr temp, (1 << PIN_SOL_BAJAR)          ; Apagar D2 (X0)
-    sbr temp, (1 << PIN_SOL_SUBIR)          ; Encender D3 (X1)
+    cbr temp, (1 << PIN_SOL_BAJAR)          ; Apagar D2
+    sbr temp, (1 << PIN_SOL_SUBIR)          ; Encender D3
     out PORTD, temp
 
-    rcall DELAY_30MS                        ; Pulso calibrado de 30ms (seguro para PLC)
+    ldi del_cnt1, 4
+SUBIR_P_LOOP:
+    rcall DELAY_10MS
+    dec del_cnt1
+    brne SUBIR_P_LOOP
 
     in temp, PORTD
     cbr temp, (1 << PIN_SOL_SUBIR)          ; Apagar pulso
@@ -264,27 +188,29 @@ SUBIR_LAPIZ:
     ret
 
 ; ------------------------------------------------------------------------------
-; BAJAR_LAPIZ:
+; BAJAR_LAPIZ
 ; ------------------------------------------------------------------------------
 BAJAR_LAPIZ:
-    rcall DELAY_CONMUTACION
-
     in temp, PORTD
-    cbr temp, (1 << PIN_SOL_SUBIR)          ; Apagar D3 (X1)
-    sbr temp, (1 << PIN_SOL_BAJAR)          ; Encender D2 (X0)
+    cbr temp, (1 << PIN_SOL_SUBIR)          ; Apagar D3
+    sbr temp, (1 << PIN_SOL_BAJAR)          ; Encender D2
     out PORTD, temp
 
-    rcall DELAY_30MS
+    ldi del_cnt1, 4
+BAJAR_P_LOOP:
+    rcall DELAY_10MS
+    dec del_cnt1
+    brne BAJAR_P_LOOP
 
     in temp, PORTD
-    cbr temp, (1 << PIN_SOL_BAJAR)
+    cbr temp, (1 << PIN_SOL_BAJAR)       ; Apagar pulso
     out PORTD, temp
 
     rcall DELAY_CONMUTACION
     ret
 
 ; ------------------------------------------------------------------------------
-; PARAR_MOTORES: Apaga señales de movimiento (D4..D7) preservando USART y solenoides
+; PARAR_MOTORES
 ; ------------------------------------------------------------------------------
 PARAR_MOTORES:
     in temp, PORTD
@@ -294,7 +220,7 @@ PARAR_MOTORES:
     ret
 
 ; ------------------------------------------------------------------------------
-; MOVER_TRAZO: Aplica dir_mask (r18) durante dur_pasos (r19)
+; MOVER_TRAZO
 ; ------------------------------------------------------------------------------
 MOVER_TRAZO:
     in temp, PORTD
@@ -315,7 +241,6 @@ FIN_TRAZO:
 
 ; ------------------------------------------------------------------------------
 ; MOVER_TRAZO_HD:
-; Conmuta dirección en caliente utilizando micro-pasos de alta definición (40 ms)
 ; ------------------------------------------------------------------------------
 MOVER_TRAZO_HD:
     in temp, PORTD
@@ -335,9 +260,6 @@ FIN_HD:
 
 ; ------------------------------------------------------------------------------
 ; EJECUTAR_LUT:
-; Intérprete de tablas Look-Up Table (LUT) en memoria Flash (.cseg).
-; Lee pares (comando, duración). Si comando es 0xFF ejecuta acción de control
-; (subir/bajar lápiz, parar motores, retardos). Si comando es 0x00 termina.
 ; ------------------------------------------------------------------------------
 EJECUTAR_LUT:
     lpm temp, Z+
@@ -365,11 +287,11 @@ EJECUTAR_CTRL_LUT:
     rjmp EJECUTAR_LUT
 
 CTRL_BAJAR:
-    rcall BAJAR
+    rcall BAJAR_LAPIZ
     rjmp EJECUTAR_LUT
 
 CTRL_SUBIR:
-    rcall SUBIR
+    rcall SUBIR_LAPIZ
     rjmp EJECUTAR_LUT
 
 CTRL_DELAY:
@@ -385,130 +307,29 @@ FIN_LUT:
     ret
 
 ; ------------------------------------------------------------------------------
+; VIAJAR al Centro
 ; ------------------------------------------------------------------------------
-; RUTINAS DE POSICIONAMIENTO DESDE HOME (ESQUINA SUPERIOR DERECHA)
-; ------------------------------------------------------------------------------
-VIAJAR_ESQ_SUP_DER:
-    rcall SUBIR
-    ldi dir_mask, DIR_IZQ
-    ldi dur_pasos, 20
-    rcall MOVER_TRAZO
-    rcall DELAY_250MS
-    ldi dir_mask, DIR_ABAJO
-    ldi dur_pasos, 15
-    rcall MOVER_TRAZO
-    rcall DELAY_500MS
-    ret
-
-RETORNAR_ESQ_SUP_DER:
-    rcall SUBIR
-    ldi dir_mask, DIR_ARRIBA
-    ldi dur_pasos, 15
-    rcall MOVER_TRAZO
-    rcall DELAY_250MS
-    ldi dir_mask, DIR_DER
-    ldi dur_pasos, 20
-    rcall MOVER_TRAZO
-    rcall DELAY_500MS
-    ret
-
-VIAJAR_ESQ_SUP_IZQ:
-    rcall SUBIR
-    ldi dir_mask, DIR_IZQ
-    ldi dur_pasos, 100
-    rcall MOVER_TRAZO
-    rcall DELAY_250MS
-    ldi dir_mask, DIR_ABAJO
-    ldi dur_pasos, 15
-    rcall MOVER_TRAZO
-    rcall DELAY_500MS
-    ret
-
-RETORNAR_ESQ_SUP_IZQ:
-    rcall SUBIR
-    ldi dir_mask, DIR_ARRIBA
-    ldi dur_pasos, 15
-    rcall MOVER_TRAZO
-    rcall DELAY_250MS
-    ldi dir_mask, DIR_DER
-    ldi dur_pasos, 100
-    rcall MOVER_TRAZO
-    rcall DELAY_500MS
-    ret
-
-VIAJAR_ESQ_INF_IZQ:
-    rcall SUBIR
-    ldi dir_mask, DIR_IZQ
-    ldi dur_pasos, 100
-    rcall MOVER_TRAZO
-    rcall DELAY_250MS
-    ldi dir_mask, DIR_ABAJO
-    ldi dur_pasos, 75
-    rcall MOVER_TRAZO
-    rcall DELAY_500MS
-    ret
-
-RETORNAR_ESQ_INF_IZQ:
-    rcall SUBIR
-    ldi dir_mask, DIR_ARRIBA
-    ldi dur_pasos, 75
-    rcall MOVER_TRAZO
-    rcall DELAY_250MS
-    ldi dir_mask, DIR_DER
-    ldi dur_pasos, 100
-    rcall MOVER_TRAZO
-    rcall DELAY_500MS
-    ret
-
-VIAJAR_ESQ_INF_DER:
-    rcall SUBIR
-    ldi dir_mask, DIR_IZQ
-    ldi dur_pasos, 20
-    rcall MOVER_TRAZO
-    rcall DELAY_250MS
-    ldi dir_mask, DIR_ABAJO
-    ldi dur_pasos, 75
-    rcall MOVER_TRAZO
-    rcall DELAY_500MS
-    ret
-
-RETORNAR_ESQ_INF_DER:
-    rcall SUBIR
-    ldi dir_mask, DIR_ARRIBA
-    ldi dur_pasos, 75
-    rcall MOVER_TRAZO
-    rcall DELAY_250MS
-    ldi dir_mask, DIR_DER
-    ldi dur_pasos, 20
-    rcall MOVER_TRAZO
-    rcall DELAY_500MS
-    ret
-
 VIAJAR_AL_CENTRO:
-    rcall SUBIR
+    rcall SUBIR_LAPIZ
+    rcall DELAY_500MS         ; Espera reposo total del pistón
+
     ldi ZL, LOW(STR_VIAJE_CENTRO * 2)
     ldi ZH, HIGH(STR_VIAJE_CENTRO * 2)
     rcall USART_PRINT_FLASH
+
+    ; 1. Desplazamiento horizontal hacia la IZQUIERDA (PD7)
     ldi dir_mask, DIR_IZQ
     ldi dur_pasos, PASOS_CENTRO_X
     rcall MOVER_TRAZO
+
     rcall DELAY_250MS
+
+    ; 2. Desplazamiento vertical hacia ABAJO (PD4)
     ldi dir_mask, DIR_ABAJO
     ldi dur_pasos, PASOS_CENTRO_Y
     rcall MOVER_TRAZO
-    rcall DELAY_500MS
-    ret
 
-RETORNAR_DEL_CENTRO:
-    rcall SUBIR
-    ldi dir_mask, DIR_ARRIBA
-    ldi dur_pasos, PASOS_CENTRO_Y
-    rcall MOVER_TRAZO
-    rcall DELAY_250MS
-    ldi dir_mask, DIR_DER
-    ldi dur_pasos, PASOS_CENTRO_X
-    rcall MOVER_TRAZO
-    rcall DELAY_500MS
+    rcall DELAY_500MS             ; Estabilización mecánica en el centro
     ret
 
 ; ==============================================================================
@@ -516,41 +337,41 @@ RETORNAR_DEL_CENTRO:
 ; ==============================================================================
 
 ; ------------------------------------------------------------------------------
-; 1. TRIÁNGULO EQUILÁTERO (GRANDE)
-; Base simétrica completa y diagonales de 60°
+; 1. TRIÁNGULO EQUILÁTER
 ; ------------------------------------------------------------------------------
 DIBUJAR_TRIANGULO:
     ldi ZL, LOW(STR_DIB_TRIANGULO * 2)
     ldi ZH, HIGH(STR_DIB_TRIANGULO * 2)
     rcall USART_PRINT_FLASH
 
-    rcall BAJAR
+    rcall BAJAR_LAPIZ
+    rcall DELAY_500MS
 
-    ; Lado 1: Base hacia la IZQUIERDA (16 pasos)
+    ; Lado 1: Base hacia la IZQUIERDA
     ldi dir_mask, DIR_IZQ
     ldi dur_pasos, 16
     rcall MOVER_TRAZO
     rcall DELAY_250MS
 
-    ; Lado 2: Diagonal arriba-derecha (8 pasos)
+    ; Lado 2: Diagonal arriba-derecha
     ldi dir_mask, DIR_ARR_DER
     ldi dur_pasos, 8
     rcall MOVER_TRAZO
     rcall DELAY_250MS
 
-    ; Lado 3: Diagonal abajo-derecha (8 pasos, cierra exactamente la base)
+    ; Lado 3: Diagonal abajo-derecha
     ldi dir_mask, DIR_ABJ_DER
     ldi dur_pasos, 8
     rcall MOVER_TRAZO
     rcall DELAY_250MS
 
-    rcall SUBIR
+    rcall SUBIR_LAPIZ
+    rcall DELAY_500MS
     rcall IMPRIMIR_LISTO
     ret
 
 ; ------------------------------------------------------------------------------
-; 2. CÍRCULO (POLÍGONO REGULAR CIRCULAR - DIÁMETRO ~20 MM)
-; 8 lados simétricos calibrados al tamaño de la hoja
+; 2. CÍRCULO 64 cortes
 ; ------------------------------------------------------------------------------
 DIBUJAR_CIRCULO:
     ldi ZL, LOW(STR_DIB_CIRCULO * 2)
@@ -561,64 +382,27 @@ DIBUJAR_CIRCULO:
     ldi ZH, HIGH(LUT_CIRCULO * 2)
     rcall EJECUTAR_LUT
 
-    rcall SUBIR
+    rcall DELAY_250MS ; Pausa de reposo
+    rcall SUBIR_LAPIZ
+    rcall DELAY_500MS
     rcall IMPRIMIR_LISTO
     ret
 
 ; ------------------------------------------------------------------------------
-; 3. PENTAGRAMA (ESTRELLA DE 5 PUNTAS - ANCHO ~21 MM)
-; Silueta continua de 10 aristas simétricas calibrada al tamaño de la hoja
+; 3. ESTRELLA DE 5 PUNTAS
 ; ------------------------------------------------------------------------------
 DIBUJAR_PENTAGRAMA:
     ldi ZL, LOW(STR_DIB_PENTAGRAMA * 2)
     ldi ZH, HIGH(STR_DIB_PENTAGRAMA * 2)
     rcall USART_PRINT_FLASH
 
-    rcall BAJAR
+    ldi ZL, LOW(LUT_ESTRELLA * 2)
+    ldi ZH, HIGH(LUT_ESTRELLA * 2)
+    rcall EJECUTAR_LUT
 
-    ; Trazo 1: Vertice superior hacia pata inferior izquierda (dX = -4, dY = -12)
-    ldi dir_mask, DIR_ABJ_IZQ
-    ldi dur_pasos, 4
-    rcall MOVER_TRAZO
-    ldi dir_mask, DIR_ABAJO
-    ldi dur_pasos, 8
-    rcall MOVER_TRAZO
-    rcall DELAY_CONMUTACION
-
-    ; Trazo 2: Pata inf. izq. hacia punta lateral derecha (dX = +12, dY = +7)
-    ldi dir_mask, DIR_ARR_DER
-    ldi dur_pasos, 7
-    rcall MOVER_TRAZO
-    ldi dir_mask, DIR_DER
-    ldi dur_pasos, 5
-    rcall MOVER_TRAZO
-    rcall DELAY_CONMUTACION
-
-    ; Trazo 3: Punta lateral derecha hacia punta lateral izquierda (dX = -16, dY = 0)
-    ldi dir_mask, DIR_IZQ
-    ldi dur_pasos, 16
-    rcall MOVER_TRAZO
-    rcall DELAY_CONMUTACION
-
-    ; Trazo 4: Punta lateral izq. hacia pata inferior derecha (dX = +12, dY = -7)
-    ldi dir_mask, DIR_DER
-    ldi dur_pasos, 5
-    rcall MOVER_TRAZO
-    ldi dir_mask, DIR_ABJ_DER
-    ldi dur_pasos, 7
-    rcall MOVER_TRAZO
-    rcall DELAY_CONMUTACION
-
-    ; Trazo 5: Pata inf. der. de regreso al vertice superior (dX = -4, dY = +12)
-    ldi dir_mask, DIR_ARRIBA
-    ldi dur_pasos, 8
-    rcall MOVER_TRAZO
-    ldi dir_mask, DIR_ARR_IZQ
-    ldi dur_pasos, 4
-    rcall MOVER_TRAZO
-    rcall DELAY_CONMUTACION
-
-    rcall SUBIR
+    rcall DELAY_250MS                       ; Pausa de reposo tras micro-pasos HD antes de accionar el piston
+    rcall SUBIR_LAPIZ
+    rcall DELAY_500MS
     rcall IMPRIMIR_LISTO
     ret
 
@@ -668,14 +452,7 @@ DIBUJAR_LIBRE_CASA:
     rcall MOVER_TRAZO
 
     rcall SUBIR_LAPIZ
-    rcall DELAY_250MS
-
-    ; Regresar a la esquina de inicio de la casita (cierre exacto de posicion)
-    ldi dir_mask, DIR_DER
-    ldi dur_pasos, 8
-    rcall MOVER_TRAZO
     rcall DELAY_500MS
-
     rcall IMPRIMIR_LISTO
     ret
 
@@ -683,15 +460,6 @@ DIBUJAR_LIBRE_CASA:
 
 ; ==============================================================================
 ; MACROS DE MOVIMIENTO PARA DIBUJO DIRECTO
-; Permiten especificar la cantidad de pasos directamente:
-;   MOVER_IZ  5   ; Mueve 5 pasos a la izquierda
-;   MOVER_DER 5   ; Mueve 5 pasos a la derecha
-;   MOVER_AR  4   ; Mueve 4 pasos arriba
-;   MOVER_AB  4   ; Mueve 4 pasos abajo
-;   MOVER_AI  3   ; Mueve 3 pasos diagonal arriba-izquierda
-;   MOVER_AD  3   ; Mueve 3 pasos diagonal arriba-derecha
-;   MOVER_ZI  3   ; Mueve 3 pasos diagonal abajo-izquierda
-;   MOVER_ZD  3   ; Mueve 3 pasos diagonal abajo-derecha
 ; ==============================================================================
 .macro MOVER_IZ
     ldi dir_mask, DIR_IZQ
@@ -750,15 +518,6 @@ DIBUJAR_LIBRE_CASA:
 
 ; ==============================================================================
 ; SUBRUTINAS DE MOVIMIENTO RÁPIDO (CADA LLAMADA AVANZA 1 PASO)
-; Puedes llamarlas simplemente con:
-;   rcall IZ    ; o rcall IZQ
-;   rcall DER
-;   rcall AR    ; o rcall ARR
-;   rcall AB    ; o rcall ABJ
-;   rcall AI    ; Arriba-Izquierda
-;   rcall AD    ; Arriba-Derecha
-;   rcall ZI    ; Abajo-Izquierda
-;   rcall ZD    ; Abajo-Derecha
 ; ==============================================================================
 IZ:
 IZQ:
@@ -830,7 +589,7 @@ PAUSA:
     ret
 
 ; ------------------------------------------------------------------------------
-; P. POKÉMON ASIGNADO: CUBONE (#104 - GRUPO 16) - LIENZO EN BLANCO
+; P. POKÉMON ASIGNADO: CUBONE 
 ; ------------------------------------------------------------------------------
 DIBUJAR_CUBONE:
     ldi ZL, LOW(STR_DIB_CUBONE * 2)
@@ -1398,73 +1157,59 @@ DIBUJAR_CUBONE:
     rcall IMPRIMIR_LISTO
     ret
 
-; T. DIBUJAR TODAS LAS FIGURAS EN SECUENCIA
-; ------------------------------------------------------------------------------
+; ==============================================================================
+;	DIBUJAR TODAS LAS FIGURAS EN SECUENCIA
+; ==============================================================================
 DIBUJAR_TODAS:
     ldi ZL, LOW(STR_DIB_TODAS * 2)
     ldi ZH, HIGH(STR_DIB_TODAS * 2)
     rcall USART_PRINT_FLASH
 
-    ; --------------------------------------------------------------------------
-    ; 1. ESQUINA SUPERIOR DERECHA: TRIANGULO (X=20, Y=15)
-    ; --------------------------------------------------------------------------
-    rcall VIAJAR_ESQ_SUP_DER
+    ; --- 1. TRIANGULO (Centro-Superior) ---
     rcall DIBUJAR_TRIANGULO
-    rcall DELAY_1S
-
-    ; --------------------------------------------------------------------------
-    ; 2. ESQUINA SUPERIOR IZQUIERDA: CIRCULO PEQUENO (X=100, Y=15)
-    ; Al terminar el triangulo el lapiz quedo en (X=20, Y=15).
-    ; Desplazamos 80 pasos a la izquierda.
-    ; --------------------------------------------------------------------------
-    MOVER_IZ 80
     rcall DELAY_500MS
+
+    MOVER_IZ 22
+    rcall DELAY_500MS
+
+    ; --- 2. CIRCULO (Superior-Izquierda) ---
     rcall DIBUJAR_CIRCULO
-    rcall DELAY_1S
-
-    ; --------------------------------------------------------------------------
-    ; 3. ESQUINA INFERIOR IZQUIERDA: PENTAGRAMA CLASICO (X=100, Y=75)
-    ; Al terminar el circulo el lapiz quedo en (X=100, Y=15).
-    ; Desplazamos 60 pasos hacia abajo.
-    ; --------------------------------------------------------------------------
-    MOVER_AB 60
     rcall DELAY_500MS
+
+    MOVER_AB 25
+    rcall DELAY_500MS
+
+    ; --- 3. PENTAGRAMA (Inferior-Izquierda) ---
     rcall DIBUJAR_PENTAGRAMA
-    rcall DELAY_1S
-
-    ; --------------------------------------------------------------------------
-    ; 4. ESQUINA INFERIOR DERECHA: CASITA (X=20, Y=75)
-    ; Al terminar el pentagrama el lapiz quedo en (X=100, Y=75).
-    ; Desplazamos 80 pasos a la derecha.
-    ; --------------------------------------------------------------------------
-    MOVER_DER 80
     rcall DELAY_500MS
+
+    MOVER_DER 25
+    rcall DELAY_500MS
+
+    ; --- 4. CASITA (Inferior-Centro) ---
     rcall DIBUJAR_LIBRE_CASA
-    rcall DELAY_1S
-
-    ; --------------------------------------------------------------------------
-    ; 5. CENTRO DE LA HOJA: POKEMON CUBONE (#104) (X=70, Y=50)
-    ; Al terminar la casita el lapiz quedo en (X=20, Y=75).
-    ; Desplazamos 50 pasos a la izquierda y 25 pasos hacia arriba.
-    ; --------------------------------------------------------------------------
-    MOVER_IZ 50
-    MOVER_AR 25
     rcall DELAY_500MS
+
+    ; Mover a la DERECHA y más hacia ARRIBA para Cubone
+ 
+    MOVER_DER 33
+    MOVER_AR 22
+    rcall DELAY_500MS
+
+    ; --- 5. CUBONE (Lateral Derecho) ---
     rcall DIBUJAR_CUBONE
+    rcall DELAY_500MS
 
-    ; Retornar a Home desde el centro (X=70, Y=50 -> X=0, Y=0)
-    rcall RETORNAR_DEL_CENTRO
+    ; Retorno al centro
+    MOVER_IZ 28
+    MOVER_AR 22
+    rcall DELAY_500MS
 
-    ; Finalizacion general
     ldi ZL, LOW(STR_TODAS_OK * 2)
     ldi ZH, HIGH(STR_TODAS_OK * 2)
     rcall USART_PRINT_FLASH
     ret
 
-; ==============================================================================
-; MODO DE CONTROL Y EDICIÓN PERSONALIZADO (REQUISITO 3)
-; Control interactivo por terminal serie en tiempo real
-; ==============================================================================
 MODO_PERSONALIZADO:
     ldi ZL, LOW(STR_MENU_MANUAL * 2)
     ldi ZH, HIGH(STR_MENU_MANUAL * 2)
@@ -1643,7 +1388,7 @@ IMPRIMIR_LISTO:
     ret
 
 ; ==============================================================================
-; SUBRUTINAS DE TEMPORIZACIÓN (CALIBRADAS A 16 MHz)
+; SUBRUTINAS DE TEMPORIZACIÓN
 ; ==============================================================================
 DELAY_CONMUTACION:
     ldi del_cnt1, 5
@@ -1651,22 +1396,6 @@ D_CONM_LOOP:
     rcall DELAY_10MS
     dec del_cnt1
     brne D_CONM_LOOP
-    ret
-
-DELAY_30MS:
-    ldi del_cnt1, 3
-D_30_LOOP:
-    rcall DELAY_10MS
-    dec del_cnt1
-    brne D_30_LOOP
-    ret
-
-DELAY_100MS:
-    ldi del_cnt1, 10
-D_100_LOOP:
-    rcall DELAY_10MS
-    dec del_cnt1
-    brne D_100_LOOP
     ret
 
 DELAY_250MS:
@@ -1686,7 +1415,7 @@ D_PASO_LOOP:
     ret
 
 DELAY_PASO_HD:
-    ldi del_cnt1, 8                         ; 8 * 10 ms = 80 ms por micro-paso (seguro para PLC y reles)
+    ldi del_cnt1, 4                         ; 4 * 10 ms = 40 ms por micro-paso
 D_HD_LOOP:
     rcall DELAY_10MS
     dec del_cnt1
@@ -1717,10 +1446,6 @@ D_10MS_L2:
     brne D_10MS_L1
     ret
 
-; ==============================================================================
-; CADENAS DE TEXTO EN MEMORIA FLASH (.cseg)
-; Conteo estrictamente par de bytes por línea (0 Warnings en avrasm2)
-; ==============================================================================
 STR_MENU_PRINCIPAL:
     .db 13, 10, "========================================================", 13, 10
     .db "  UTEC - TECNOLOGIAS DE MICROPROCESAMIENTO", 13, 10
@@ -1784,59 +1509,164 @@ STR_LISTO:
 STR_VIAJE_CENTRO:
     .db "-> [MOV] Viajando al centro...", 13, 10, 0, 0
 
-STR_RST_POR:
-    .db 13, 10, ">>> [RESET: Power-On (Encendido normal)] <<<", 13, 10, 0, 0
-
-STR_RST_BOR:
-    .db 13, 10, ">>> [ALERTA: RESET POR BROWN-OUT (Caida 5V en solenoide/rele!)] <<<", 13, 10, 0
-
-STR_RST_EXT:
-    .db 13, 10, ">>> [ALERTA: RESET EXTERNO (Ruido inductivo en pin RESET!)] <<<", 13, 10, 0
-
-STR_RST_WDT:
-    .db 13, 10, ">>> [ALERTA: RESET POR WATCHDOG] <<<", 13, 10, 0, 0
-
-; ==============================================================================
-; TABLAS LOOK-UP TABLE (LUT) DE FIGURAS EN ALTA DEFINICION (.cseg)
-; Formato por entrada: (Comando/Mascara, Duracion de pasos)
-; Comandos especiales: 0xFF, 0x01 (Bajar lapiz)
-;                      0xFF, 0x02 (Subir lapiz)
-;                      0xFF, 0x03 (Delay 250ms)
-;                      0xFF, 0x04 (Parar motores)
-;                      0x00, 0x00 (Fin de tabla)
-; ==============================================================================
-
 LUT_CIRCULO:
-    .db 0xFF, 0x01, 0xFF, 0x03              ; Bajar lapiz y pausa 250ms
-    ; Cuadrante 1: Arriba e Izquierda (dX = -18, dY = +18)
-    .db DIR_ARRIBA, 3, DIR_ARRIBA, 2
+    .db 0xFF, 0x01, 0xFF, 0x03
+    ; Cuadrante 1: Arriba e Izquierda (dX = -60, dY = +60)
+    .db DIR_ARRIBA, 7, DIR_ARR_IZQ, 1
+    .db DIR_ARRIBA, 5, DIR_ARR_IZQ, 2
+    .db DIR_ARRIBA, 3, DIR_ARR_IZQ, 2
+    .db DIR_ARRIBA, 3, DIR_ARR_IZQ, 2
+    .db DIR_ARRIBA, 2, DIR_ARR_IZQ, 3
+    .db DIR_ARRIBA, 2, DIR_ARR_IZQ, 3
+    .db DIR_ARR_IZQ, 4, DIR_ARR_IZQ, 4
+    .db DIR_ARR_IZQ, 4, DIR_ARR_IZQ, 3
+    .db DIR_IZQ, 1, DIR_ARR_IZQ, 3
+    .db DIR_IZQ, 2, DIR_ARR_IZQ, 2
+    .db DIR_IZQ, 3, DIR_ARR_IZQ, 2
+    .db DIR_IZQ, 3, DIR_ARR_IZQ, 2
+    .db DIR_IZQ, 4, DIR_ARR_IZQ, 1
+    .db DIR_IZQ, 6, DIR_IZQ, 0
+
+    ; Cuadrante 2: Abajo e Izquierda (dX = -60, dY = -60)
+    .db DIR_IZQ, 6, DIR_IZQ, 0
+    .db DIR_IZQ, 4, DIR_ABJ_IZQ, 1
+    .db DIR_IZQ, 3, DIR_ABJ_IZQ, 2
+    .db DIR_IZQ, 3, DIR_ABJ_IZQ, 2
+    .db DIR_IZQ, 2, DIR_ABJ_IZQ, 2
+    .db DIR_IZQ, 1, DIR_ABJ_IZQ, 3
+    .db DIR_ABJ_IZQ, 3, DIR_ABJ_IZQ, 4
+    .db DIR_ABJ_IZQ, 4, DIR_ABJ_IZQ, 4
+    .db DIR_ABJ_IZQ, 3, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 3, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 2, DIR_ABAJO, 3
+    .db DIR_ABJ_IZQ, 2, DIR_ABAJO, 3
+    .db DIR_ABJ_IZQ, 2, DIR_ABAJO, 5
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 7
+
+    ; Cuadrante 3: Abajo y Derecha (dX = +60, dY = -60)
+    .db DIR_ABAJO, 7, DIR_ABJ_DER, 1
+    .db DIR_ABAJO, 5, DIR_ABJ_DER, 2
+    .db DIR_ABAJO, 3, DIR_ABJ_DER, 2
+    .db DIR_ABAJO, 3, DIR_ABJ_DER, 2
+    .db DIR_ABAJO, 2, DIR_ABJ_DER, 3
+    .db DIR_ABAJO, 2, DIR_ABJ_DER, 3
+    .db DIR_ABJ_DER, 4, DIR_ABJ_DER, 4
+    .db DIR_ABJ_DER, 4, DIR_ABJ_DER, 3
+    .db DIR_DER, 1, DIR_ABJ_DER, 3
+    .db DIR_DER, 2, DIR_ABJ_DER, 2
+    .db DIR_DER, 3, DIR_ABJ_DER, 2
+    .db DIR_DER, 3, DIR_ABJ_DER, 2
+    .db DIR_DER, 4, DIR_ABJ_DER, 1
+    .db DIR_DER, 6, DIR_DER, 0
+
+    ; Cuadrante 4: Arriba y Derecha (dX = +60, dY = +60)
+    .db DIR_DER, 6, DIR_DER, 0
+    .db DIR_DER, 4, DIR_ARR_DER, 1
+    .db DIR_DER, 3, DIR_ARR_DER, 2
+    .db DIR_DER, 3, DIR_ARR_DER, 2
+    .db DIR_DER, 2, DIR_ARR_DER, 2
+    .db DIR_DER, 1, DIR_ARR_DER, 3
+    .db DIR_ARR_DER, 3, DIR_ARR_DER, 4
+    .db DIR_ARR_DER, 4, DIR_ARR_DER, 4
+    .db DIR_ARR_DER, 3, DIR_ARRIBA, 2
+    .db DIR_ARR_DER, 3, DIR_ARRIBA, 2
+    .db DIR_ARR_DER, 2, DIR_ARRIBA, 3
+    .db DIR_ARR_DER, 2, DIR_ARRIBA, 3
+    .db DIR_ARR_DER, 2, DIR_ARRIBA, 5
+    .db DIR_ARR_DER, 1, DIR_ARRIBA, 7
+    .db 0xFF, 0x04, 0x00, 0x00
+
+LUT_ESTRELLA:
+    .db 0xFF, 0x01, 0xFF, 0x03
+    ; 1. Punta Superior -> Valle Sup. Izq. (dX = -10, dY = -28)
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 1
+
+    ; 2. Brazo Horizontal Izquierdo (dX = -25, dY = 0)
+    .db DIR_IZQ, 25, 0xFF, 0x04
+
+    ; 3. Punta Izq. -> Valle Inf. Izq. (dX = +22, dY = -16)
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 4, DIR_DER, 0
+
+    ; 4. Valle Inf. Izq. -> Pata Inf. Izq. (dX = -12, dY = -26)
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 2
+    .db DIR_ABJ_IZQ, 2, DIR_ABAJO, 1
+    .db DIR_ABJ_IZQ, 2, 0xFF, 0x04
+
+    ; 5. Pata Inf. Izq. -> Valle Central (dX = +25, dY = +18)
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 4, DIR_DER, 0
+
+    ; 6. Valle Central -> Pata Inf. Der. (dX = +25, dY = -18)
+    .db DIR_ABJ_DER, 4, DIR_DER, 0
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, DIR_DER, 1
+    .db DIR_ABJ_DER, 2, 0xFF, 0x04
+
+    ; 7. Pata Inf. Der. -> Valle Inf. Der. (dX = -12, dY = +26)
+    .db DIR_ARR_IZQ, 2, DIR_ARRIBA, 1
+    .db DIR_ARR_IZQ, 2, DIR_ARRIBA, 1
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+
+    ; 8. Valle Inf. Der. -> Punta Lateral Der. (dX = +22, dY = +16)
+    .db DIR_ARR_DER, 4, DIR_DER, 0
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, DIR_DER, 1
+    .db DIR_ARR_DER, 2, 0xFF, 0x04
+
+    ; 9. Punta Lateral Der. -> Valle Sup. Der. (dX = -25, dY = 0)
+    .db DIR_IZQ, 25, DIR_IZQ, 0
+
+    ; 10. Valle Sup. Der. -> Punta Superior (dX = -10, dY = +28)
     .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 1
-    .db DIR_ARR_IZQ, 2, DIR_ARR_IZQ, 3
-    .db DIR_ARR_IZQ, 3, DIR_IZQ, 1
-    .db DIR_ARR_IZQ, 2, DIR_IZQ, 2
-    .db DIR_ARR_IZQ, 1, DIR_IZQ, 3
-
-    ; Cuadrante 2: Abajo e Izquierda (dX = -18, dY = -18)
-    .db DIR_IZQ, 3, DIR_IZQ, 2
-    .db DIR_ABJ_IZQ, 1, DIR_IZQ, 1
-    .db DIR_ABJ_IZQ, 2, DIR_ABJ_IZQ, 3
-    .db DIR_ABJ_IZQ, 3, DIR_ABAJO, 1
-    .db DIR_ABJ_IZQ, 2, DIR_ABAJO, 2
-    .db DIR_ABJ_IZQ, 1, DIR_ABAJO, 3
-
-    ; Cuadrante 3: Abajo y Derecha (dX = +18, dY = -18)
-    .db DIR_ABAJO, 3, DIR_ABAJO, 2
-    .db DIR_ABJ_DER, 1, DIR_ABAJO, 1
-    .db DIR_ABJ_DER, 2, DIR_ABJ_DER, 3
-    .db DIR_ABJ_DER, 3, DIR_DER, 1
-    .db DIR_ABJ_DER, 2, DIR_DER, 2
-    .db DIR_ABJ_DER, 1, DIR_DER, 3
-
-    ; Cuadrante 4: Arriba y Derecha (dX = +18, dY = +18)
-    .db DIR_DER, 3, DIR_DER, 2
-    .db DIR_ARR_DER, 1, DIR_DER, 1
-    .db DIR_ARR_DER, 2, DIR_ARR_DER, 3
-    .db DIR_ARR_DER, 3, DIR_ARRIBA, 1
-    .db DIR_ARR_DER, 2, DIR_ARRIBA, 2
-    .db DIR_ARR_DER, 1, DIR_ARRIBA, 3
-    .db 0xFF, 0x04, 0x00, 0x00              ; Parar motores y fin de LUT
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db DIR_ARR_IZQ, 1, DIR_ARRIBA, 2
+    .db 0xFF, 0x04, 0x00, 0x00

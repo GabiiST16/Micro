@@ -3,8 +3,16 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 #include <stdio.h>
+
+// Dirección I2C del PCF8574 (Cambiar a 0x3F si tu pantalla no muestra texto)
 #define PCF8574_ADDR 0x27
+
+// ==========================================
+// DEFINICIÓN DE FRECUENCIAS (Hz)
+// ==========================================
 #define SIL  0
+
+// Octava 3 (Bajos / Acompañamiento - Buzzer 2 en PB3)
 #define C3   131
 #define D3   147
 #define DS3  156
@@ -17,8 +25,10 @@
 #define AB3  208
 #define A3   220
 #define AS3  233
-#define BB3  233
+#define BB3  233   // Si bemol 3
 #define B3   247
+
+// Octava 4 (Pulsadores y Melodía - Buzzer 1 en PB1)
 #define C4   262
 #define CS4  277
 #define D4   294
@@ -32,8 +42,10 @@
 #define AB4  415
 #define A4   440
 #define AS4  466
-#define BB4  466 
+#define BB4  466   // Si bemol 4
 #define B4   494
+
+// Octava 5 (Melodía aguda - Buzzer 1 en PB1)
 #define C5   523
 #define CS5  554
 #define D5   587
@@ -56,6 +68,9 @@ volatile EstadoSistema estadoActual = ESTADO_PIANO;
 volatile char comandoUART = 0;
 volatile uint8_t nuevoComando = 0;
 
+// ==========================================
+// COMUNICACIÓN UART Y MENÚ INTERACTIVO
+// ==========================================
 void UART_Init(unsigned int baud) {
     unsigned int ubrr = F_CPU / 16 / baud - 1;
     UBRR0H = (unsigned char)(ubrr >> 8);
@@ -94,6 +109,9 @@ ISR(USART_RX_vect) {
     nuevoComando = 1;
 }
 
+// ==========================================
+// DRIVER I2C / TWI
+// ==========================================
 void I2C_Init(void) {
     TWSR = 0x00;
     TWBR = 0x48; // SCL = 100 kHz a 16 MHz
@@ -116,6 +134,9 @@ void I2C_Write(uint8_t data) {
     while (!(TWCR & (1 << TWINT)));
 }
 
+// ==========================================
+// PANTALLA LCD 16x2 I2C (PCF8574)
+// ==========================================
 #define LCD_BACKLIGHT 0x08
 
 void LCD_I2C_WriteNibble(uint8_t nibble, uint8_t mode) {
@@ -165,15 +186,19 @@ void LCD_I2C_String(const char *str) {
     while (*str) LCD_I2C_Char((uint8_t)*str++);
 }
 
+// ==========================================
+// GENERACIÓN DE AUDIO POLIFÓNICO (2 BUZZERS)
+// ==========================================
 void PWM_Init(void) {
- 
+    // Timer 1: Melodía / Altos en PB1 (Pin 15 / OC1A)
     TCCR1A = (1 << COM1A1) | (1 << WGM11);
-    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11);
+    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11); // Prescaler 8
     DDRB |= (1 << PB1);
     PORTB &= ~(1 << PB1);
 
+    // Timer 2: Bajos / Acompañamiento en PB3 (Pin 17 / OC2A)
     TCCR2A = (1 << WGM21);
-    TCCR2B = (1 << CS22) | (1 << CS21);
+    TCCR2B = (1 << CS22) | (1 << CS21); // Prescaler 256
     DDRB |= (1 << PB3);
     PORTB &= ~(1 << PB3);
 }
@@ -201,6 +226,9 @@ void Set_Tone_Buzzer2(uint16_t freq) {
     }
 }
 
+// ==========================================
+// LECTURA DE PULSADORES (MANTIENE TUS PINES)
+// ==========================================
 uint8_t Leer_Pulsadores(uint16_t *freq_out, char *nota_out) {
     if (!(PINB & (1 << PB0))) { *freq_out = C4; sprintf(nota_out, "DO (C4)"); return 1; }
     if (!(PINB & (1 << PB2))) { *freq_out = D4; sprintf(nota_out, "RE (D4)"); return 1; }
@@ -215,6 +243,9 @@ uint8_t Leer_Pulsadores(uint16_t *freq_out, char *nota_out) {
     return 0;
 }
 
+// ============================================================================
+// CANCIÓN 1 (C1): LUIS FONSI - "DESPACITO"
+// ============================================================================
 const uint16_t mel_c1[] = {
     D5, CS5, B4, FS4, SIL,
     FS4, FS4, FS4, FS4, B4, B4, B4, B4, B4, A4, B4, G4, SIL,
@@ -240,6 +271,9 @@ const uint16_t dur_c1[] = {
 };
 const uint8_t len_c1 = sizeof(mel_c1) / sizeof(mel_c1[0]);
 
+// ============================================================================
+// CANCIÓN 2 (C2): STAR WARS - "THE IMPERIAL MARCH"
+// ============================================================================
 const uint16_t mel_c2[] = {
     G4, G4, G4, DS4, AS4, G4, DS4, AS4, G4, SIL,
     D5, D5, D5, DS5, AS4, FS4, DS4, AS4, G4, SIL
@@ -256,69 +290,128 @@ const uint16_t dur_c2[] = {
 };
 const uint8_t len_c2 = sizeof(mel_c2) / sizeof(mel_c2[0]);
 
+// ============================================================================
+// CANCIÓN 3 (C3): "MARRIED LIFE"
+// ============================================================================
+// Buzzer 1 (Clave de Sol - Melodía):
 const uint16_t mel_c3[] = {
-    
+    // Compás 1 al 3: Silencio en la melodía mientras la mano izquierda hace la intro
     SIL, SIL, SIL,
     SIL, SIL, SIL,
     SIL, SIL, SIL,
+    // Compás 4: Silencios de negra y corchea, y anacrusa de entrada (C5, D5)
     SIL, SIL, C5, D5,
+
+    // Compás 5 (Fa5 con ligadura que se sostiene en compás 6)
     F5, F5, F5,
+    // Compás 6 (Resolución de ligadura: Fa5, Mi5, Re5)
     F5, E5, D5,
+    // Compás 7 (Do5, La4, Fa4)
     C5, A4, F4,
+    // Compás 8 (Sol4 con ligadura a compás 9)
     G4, G4, G4,
+    // Compás 9 (Sol4, La4, Sib4)
     G4, A4, BB4,
+    // Compás 10 (Re5, Do5 sostenida)
     D5, C5, C5,
+    // Compás 11 (La4 con ligadura a compás 12)
     A4, A4, A4,
+    // Compás 12 (La4, Sol4, Fa4)
     A4, G4, F4,
+    // Compás 13 (Sol4 con ligadura a compás 14)
     G4, G4, G4,
+    // Compás 14 (Sol4, La4, Sib4)
     G4, A4, BB4,
+    // Compás 15 (Do5, Sib4, La4)
     C5, BB4, A4,
+    // Compás 16 (Sol4, Fa4 sostenida)
     G4, F4, F4,
+    // Cierre armónico
     F4, SIL
 };
 
+// Buzzer 2 (Clave de Fa - Acompañamiento de vals 3/4):
 const uint16_t bajo_c3[] = {
+    // Compás 1 (Fa3, La3, Do4)
     F3, A3, C4,
+    // Compás 2 (Do3, La3, Do4)
     C3, A3, C4,
+    // Compás 3 (Fa3, La3, Do4)
     F3, A3, C4,
+    // Compás 4 (Do3, La3, Do4)
     C3, A3, C4, C4,
+
+    // Compás 5 (Fa3, La3, Do4)
     F3, A3, C4,
+    // Compás 6 (Do3, La3, Do4)
     C3, A3, C4,
+    // Compás 7 (Fa3, La3, Do4)
     F3, A3, C4,
+    // Compás 8 (Do3, Sol3, Sib3)
     C3, G3, BB3,
+    // Compás 9 (Do3, Sol3, Sib3)
     C3, G3, BB3,
+    // Compás 10 (Fa3, La3, Do4)
     F3, A3, C4,
+    // Compás 11 (Re3, Fa3, La3 - Rem)
     D3, F3, A3,
+    // Compás 12 (Re3, Fa3, La3)
     D3, F3, A3,
+    // Compás 13 (Sol3, Sib3, Re4 - Solm)
     G3, BB3, D4,
+    // Compás 14 (Do3, Mi3, Sol3 - Do)
     C3, E3, G3,
+    // Compás 15 (Do3, Sol3, Sib3 - Do7)
     C3, G3, BB3,
+    // Compás 16 (Fa3, La3, Do4 - Fa)
     C3, F3, A3,
+    // Cierre
     F3, SIL
 };
 
+// Duraciones en milisegundos (Tempo vals Moderato ~115 BPM):
 const uint16_t dur_c3[] = {
+    // Compás 1
     380, 380, 380,
+    // Compás 2
     380, 380, 380,
+    // Compás 3
     380, 380, 380,
+    // Compás 4 (Negra, corchea silencio, dos corcheas de anacrusa C5 y D5)
     380, 380, 190, 190,
 
+    // Compás 5 (Fa5 ligado)
     380, 380, 380,
+    // Compás 6 (Fa5, Mi5, Re5)
     380, 380, 380,
+    // Compás 7 (Do5, La4, Fa4)
     380, 380, 380,
+    // Compás 8 (Sol4 ligado)
     380, 380, 380,
+    // Compás 9 (Sol4, La4, Sib4)
     380, 380, 380,
+    // Compás 10 (Re5, Do5 blanca)
     380, 380, 380,
+    // Compás 11 (La4 ligado)
     380, 380, 380,
+    // Compás 12 (La4, Sol4, Fa4)
     380, 380, 380,
+    // Compás 13 (Sol4 ligado)
     380, 380, 380,
+    // Compás 14 (Sol4, La4, Sib4)
     380, 380, 380,
+    // Compás 15 (Do5, Sib4, La4)
     380, 380, 380,
+    // Compás 16 (Sol4, Fa4 blanca)
     380, 380, 380,
+    // Acorde final y pausa
     1000, 300
 };
 const uint8_t len_c3 = sizeof(mel_c3) / sizeof(mel_c3[0]);
 
+// ==========================================
+// MOTOR DE REPRODUCCIÓN POLIFÓNICO
+// ==========================================
 void Reproducir_Cancion(const uint16_t *mel, const uint16_t *bajo, const uint16_t *dur, uint8_t len, const char *nombre) {
     LCD_I2C_Cmd(0x01);
     LCD_I2C_SetCursor(0, 0);
@@ -331,6 +424,7 @@ void Reproducir_Cancion(const uint16_t *mel, const uint16_t *bajo, const uint16_
     UART_SendString("\r\n");
 
     for (uint8_t i = 0; i < len; i++) {
+        // Interrumpir si se envía comando de detención
         if (nuevoComando) {
             if (comandoUART == 'S' || comandoUART == 's' || 
                 comandoUART == '0' || comandoUART == 'P' || comandoUART == 'p') {
@@ -340,8 +434,9 @@ void Reproducir_Cancion(const uint16_t *mel, const uint16_t *bajo, const uint16_
             }
         }
 
-        Set_Tone_Buzzer1(mel[i]);
-        Set_Tone_Buzzer2(bajo[i]);
+        // Activación simultánea de los dos canales de frecuencia:
+        Set_Tone_Buzzer1(mel[i]);   // Canal 1: Melodía / Altos
+        Set_Tone_Buzzer2(bajo[i]);  // Canal 2: Bajo de acompañamiento
 
         for (uint16_t t = 0; t < dur[i]; t += 10) {
             _delay_ms(10);
@@ -351,6 +446,7 @@ void Reproducir_Cancion(const uint16_t *mel, const uint16_t *bajo, const uint16_
             }
         }
 
+        // Breve silencio de corte para articulación musical
         Set_Tone_Buzzer1(0);
         Set_Tone_Buzzer2(0);
         _delay_ms(25);
@@ -367,7 +463,11 @@ void Reproducir_Cancion(const uint16_t *mel, const uint16_t *bajo, const uint16_
     UART_SendString("[FSM] Cancion finalizada. Retorno a MODO PIANO.\r\n");
 }
 
+// ==========================================
+// PROGRAMA PRINCIPAL
+// ==========================================
 int main(void) {
+    // Entradas con Pull-Up activo (Tus conexiones exactas)
     DDRB &= ~((1 << PB0) | (1 << PB2) | (1 << PB4) | (1 << PB5));
     PORTB |= (1 << PB0) | (1 << PB2) | (1 << PB4) | (1 << PB5);
 
@@ -383,6 +483,7 @@ int main(void) {
     LCD_I2C_SetCursor(0, 0);
     LCD_I2C_String("Modo: Piano");
 
+    // Desplegar menú interactivo UART
     UART_MostrarMenu();
 
     uint16_t frecuencia = 0;
@@ -390,6 +491,7 @@ int main(void) {
     uint8_t notaPrevia = 0;
 
     while (1) {
+        // Gestión de Comandos UART
         if (nuevoComando) {
             char cmd = comandoUART;
             nuevoComando = 0;
@@ -416,10 +518,12 @@ int main(void) {
             }
         }
 
+        // Modo Piano Manual con pulsadores
         if (estadoActual == ESTADO_PIANO) {
             if (Leer_Pulsadores(&frecuencia, nombreNota)) {
                 Set_Tone_Buzzer1(frecuencia);
-                Set_Tone_Buzzer2(0);
+                Set_Tone_Buzzer2(0); // El bajo permanece apagado en modo manual
+
                 if (!notaPrevia) {
                     LCD_I2C_SetCursor(1, 0);
                     LCD_I2C_String("Nota: ");

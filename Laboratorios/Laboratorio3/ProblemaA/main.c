@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+
 void wdt_init(void) __attribute__((naked)) __attribute__((section(".init3")));
 void wdt_init(void) {
     MCUSR = 0;
@@ -15,10 +16,10 @@ void wdt_init(void) {
 
 ISR(BADISR_vect) {}
 
-#define SENSOR_PIN              PC0
-#define SENSOR_PORT             PORTC
-#define SENSOR_DDR              DDRC
-#define SENSOR_IN               PINC
+#define DHT_PIN                 PD7
+#define DHT_PORT                PORTD
+#define DHT_DDR                 DDRD
+#define DHT_IN                  PIND
 
 #define CALEFACTOR_DDR          DDRB
 #define CALEFACTOR_PORT         PORTB
@@ -46,9 +47,10 @@ ISR(BADISR_vect) {}
 #define PWM_ALTA                255
 
 #define PUNTO_MEDIO_DEFAULT     20.5f
+#define INTERVALO_MEDICION_SEG  5
+
 #define TEMP_SEGURA_MIN         10.0f
 #define TEMP_SEGURA_MAX         38.0f
-#define INTERVALO_MEDICION_SEG  5
 
 typedef enum {
     ESTADO_CALOR = 0,
@@ -73,7 +75,6 @@ static volatile uint8_t g_flag_medir = 1;
 static Umbrales_t g_umbrales;
 static EstadoSistema_t g_estado = ESTADO_CONFORT;
 static float g_temp_actual = 20.5f;
-
 
 void uart_init(uint32_t baud) {
     uint16_t ubrr = (uint16_t)((F_CPU / (16UL * baud)) - 1UL);
@@ -102,9 +103,23 @@ void uart_println(const char *s) {
 }
 
 void uart_print_int(int32_t v) {
+    if (v < 0) {
+        uart_transmit('-');
+        v = -v;
+    }
+    if (v == 0) {
+        uart_transmit('0');
+        return;
+    }
     char buf[12];
-    ltoa(v, buf, 10);
-    uart_print(buf);
+    uint8_t i = 0;
+    while (v > 0) {
+        buf[i++] = (char)('0' + (v % 10));
+        v /= 10;
+    }
+    while (i > 0) {
+        uart_transmit(buf[--i]);
+    }
 }
 
 void uart_print_float(float v, uint8_t dec) {
@@ -120,7 +135,7 @@ void uart_print_float(float v, uint8_t dec) {
         for (uint8_t i = 0; i < dec; i++) {
             res *= 10.0f;
             uint8_t d = (uint8_t)res;
-            uart_transmit('0' + d);
+            uart_transmit((char)('0' + d));
             res -= (float)d;
         }
     }
@@ -135,18 +150,15 @@ char uart_receive(void) {
     return UDR0;
 }
 
-
-void adc_init(void) {
-    ADMUX = (1 << REFS0);
-    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
-}
-
-uint16_t adc_read(uint8_t ch) {
-    ADMUX = (ADMUX & 0xF0) | (ch & 0x07);
-    _delay_us(20);
-    ADCSRA |= (1 << ADSC);
-    while (ADCSRA & (1 << ADSC));
-    return ADC;
+bool uart_receive_timeout(char *c_out, uint16_t timeout_ms) {
+    while (timeout_ms--) {
+        if (uart_available()) {
+            *c_out = UDR0;
+            return true;
+        }
+        _delay_ms(1);
+    }
+    return false;
 }
 
 int8_t dht11_read(float *temp_out) {
@@ -154,52 +166,56 @@ int8_t dht11_read(float *temp_out) {
     uint8_t i, j;
     uint16_t timeout;
 
-    SENSOR_DDR |= (1 << SENSOR_PIN);
-    SENSOR_PORT &= ~(1 << SENSOR_PIN);
+    // Pulso inicial LOW de 20 ms
+    DHT_DDR |= (1 << DHT_PIN);
+    DHT_PORT &= ~(1 << DHT_PIN);
     _delay_ms(20);
 
-    SENSOR_PORT |= (1 << SENSOR_PIN);
+    // Pulso HIGH de 30 µs y pasar a entrada
+    DHT_PORT |= (1 << DHT_PIN);
     _delay_us(30);
-
-    SENSOR_DDR &= ~(1 << SENSOR_PIN);
-    SENSOR_PORT |= (1 << SENSOR_PIN);
+    DHT_DDR &= ~(1 << DHT_PIN);
+    DHT_PORT |= (1 << DHT_PIN);
 
     timeout = 10000;
-    while ((SENSOR_IN & (1 << SENSOR_PIN)) && --timeout);
+    while ((DHT_IN & (1 << DHT_PIN)) && --timeout);
     if (timeout == 0) return -1;
 
     timeout = 10000;
-    while (!(SENSOR_IN & (1 << SENSOR_PIN)) && --timeout);
+    while (!(DHT_IN & (1 << DHT_PIN)) && --timeout);
     if (timeout == 0) return -2;
 
     timeout = 10000;
-    while ((SENSOR_IN & (1 << SENSOR_PIN)) && --timeout);
+    while ((DHT_IN & (1 << DHT_PIN)) && --timeout);
     if (timeout == 0) return -3;
 
+    // Lectura de 40 bits con interrupciones deshabilitadas
+    cli();
     for (j = 0; j < 5; j++) {
         uint8_t byte_val = 0;
         for (i = 0; i < 8; i++) {
             timeout = 10000;
-            while (!(SENSOR_IN & (1 << SENSOR_PIN)) && --timeout);
-            if (timeout == 0) return -4;
+            while (!(DHT_IN & (1 << DHT_PIN)) && --timeout);
+            if (timeout == 0) { sei(); return -4; }
 
             _delay_us(38);
-            if (SENSOR_IN & (1 << SENSOR_PIN)) {
+            if (DHT_IN & (1 << DHT_PIN)) {
                 byte_val |= (1 << (7 - i));
                 timeout = 10000;
-                while ((SENSOR_IN & (1 << SENSOR_PIN)) && --timeout);
-                if (timeout == 0) return -5;
+                while ((DHT_IN & (1 << DHT_PIN)) && --timeout);
+                if (timeout == 0) { sei(); return -5; }
             }
         }
         data[j] = byte_val;
     }
+    sei();
 
     uint8_t checksum = (data[0] + data[1] + data[2] + data[3]) & 0xFF;
     if (data[4] != checksum) return -6;
 
     float t = (float)data[2];
-    if (data[3] < 10) t += (float)data[3] * 0.1f;
-    else t += (float)data[3] * 0.01f;
+    if (data[3] > 0 && data[3] < 10) t += (float)data[3] * 0.1f;
+    else if (data[3] >= 10) t += (float)data[3] * 0.01f;
 
     *temp_out = t;
     return 0;
@@ -208,25 +224,20 @@ int8_t dht11_read(float *temp_out) {
 float leer_temperatura(void) {
     float temp_dht = 0.0f;
     int8_t err = dht11_read(&temp_dht);
-    
-    if (err == 0 && temp_dht >= 0.0f && temp_dht <= 80.0f) {
+
+    if (err == 0 && temp_dht >= 0.0f && temp_dht <= 55.0f) {
         return temp_dht;
     }
-
-    uint32_t suma = 0;
-    for (uint8_t i = 0; i < 8; i++) {
-        suma += adc_read(0);
-        _delay_us(50);
-    }
-    float adc_prom = (float)(suma / 8);
-    return (adc_prom * 500.0f) / 1024.0f;
+    return g_temp_actual;
 }
-
 
 void actuadores_init(void) {
     CALEFACTOR_DDR |= (1 << CALEFACTOR_PIN);
     CALEFACTOR_PORT &= ~(1 << CALEFACTOR_PIN);
+
     VENTILADOR_DDR |= (1 << VENTILADOR_PIN);
+    VENTILADOR_PORT &= ~(1 << VENTILADOR_PIN);
+
     TCCR0A = (1 << COM0A1) | (1 << WGM01) | (1 << WGM00);
     TCCR0B = (1 << CS01) | (1 << CS00);
     OCR0A = 0;
@@ -238,7 +249,13 @@ void calefactor_set(bool encender) {
 }
 
 void ventilador_set_pwm(uint8_t duty) {
-    OCR0A = duty;
+    if (duty == 0) {
+        TCCR0A &= ~(1 << COM0A1);
+        VENTILADOR_PORT &= ~(1 << VENTILADOR_PIN);
+    } else {
+        TCCR0A |= (1 << COM0A1);
+        OCR0A = duty;
+    }
 }
 
 static void lcd_nibble(uint8_t n) {
@@ -293,22 +310,40 @@ void lcd_print(const char *s) {
     while (*s) lcd_data((uint8_t)(*s++));
 }
 
+void lcd_print_int(int16_t v) {
+    if (v < 0) {
+        lcd_data('-');
+        v = -v;
+    }
+    if (v == 0) {
+        lcd_data('0');
+        return;
+    }
+    char buf[8];
+    uint8_t i = 0;
+    while (v > 0) {
+        buf[i++] = (char)('0' + (v % 10));
+        v /= 10;
+    }
+    while (i > 0) {
+        lcd_data((uint8_t)buf[--i]);
+    }
+}
+
 void lcd_print_float(float v, uint8_t dec) {
     if (v < 0.0f) {
         lcd_data('-');
         v = -v;
     }
     int16_t ent = (int16_t)v;
-    char b[8];
-    itoa(ent, b, 10);
-    lcd_print(b);
+    lcd_print_int(ent);
     if (dec > 0) {
         lcd_data('.');
         float res = v - (float)ent;
         for (uint8_t i = 0; i < dec; i++) {
             res *= 10.0f;
             uint8_t d = (uint8_t)res;
-            lcd_data('0' + d);
+            lcd_data((uint8_t)('0' + d));
             res -= (float)d;
         }
     }
@@ -327,8 +362,7 @@ void lcd_crear_grado(void) {
 void lcd_init(void) {
     LCD_CTRL_DDR |= (1 << LCD_RS_PIN) | (1 << LCD_E_PIN);
     LCD_DATA_DDR |= (1 << LCD_D4_PIN) | (1 << LCD_D5_PIN) | (1 << LCD_D6_PIN) | (1 << LCD_D7_PIN);
-    LCD_CTRL_PORT &= ~(1 << LCD_RS_PIN);
-    LCD_CTRL_PORT &= ~(1 << LCD_E_PIN);
+    LCD_CTRL_PORT &= ~((1 << LCD_RS_PIN) | (1 << LCD_E_PIN));
 
     _delay_ms(50);
     lcd_nibble(0x03);
@@ -348,7 +382,6 @@ void lcd_init(void) {
     lcd_cmd(0x0C);
     lcd_crear_grado();
 }
-
 
 void timer1_init_1hz(void) {
     TCCR1A = 0;
@@ -377,90 +410,82 @@ void recalcular_umbrales(float sp) {
 }
 
 void ejecutar_control(float temp) {
-    if (temp < g_umbrales.umbral_cal) {
-        g_estado = ESTADO_CALOR;
-        calefactor_set(true);
-        ventilador_set_pwm(PWM_OFF);
-    } else if (temp <= g_umbrales.umbral_conf_max) {
-        g_estado = ESTADO_CONFORT;
-        calefactor_set(false);
-        ventilador_set_pwm(PWM_OFF);
-    } else if (temp <= g_umbrales.umbral_baja_max) {
-        g_estado = ESTADO_VENT_BAJA;
-        calefactor_set(false);
-        ventilador_set_pwm(PWM_BAJA);
-    } else if (temp <= g_umbrales.umbral_med_max) {
-        g_estado = ESTADO_VENT_MEDIA;
-        calefactor_set(false);
-        ventilador_set_pwm(PWM_MEDIA);
+    if (g_estado == ESTADO_CALOR) {
+        if (temp >= g_umbrales.umbral_conf_min) {
+            g_estado = ESTADO_CONFORT;
+            calefactor_set(false);
+            ventilador_set_pwm(PWM_OFF);
+        }
     } else {
-        g_estado = ESTADO_VENT_ALTA;
-        calefactor_set(false);
-        ventilador_set_pwm(PWM_ALTA);
+        if (temp <= g_umbrales.umbral_cal) {
+            g_estado = ESTADO_CALOR;
+            calefactor_set(true);
+            ventilador_set_pwm(PWM_OFF);
+        } else if (temp <= g_umbrales.umbral_conf_max) {
+            g_estado = ESTADO_CONFORT;
+            calefactor_set(false);
+            ventilador_set_pwm(PWM_OFF);
+        } else if (temp <= g_umbrales.umbral_baja_max) {
+            g_estado = ESTADO_VENT_BAJA;
+            calefactor_set(false);
+            ventilador_set_pwm(PWM_BAJA);
+        } else if (temp <= g_umbrales.umbral_med_max) {
+            g_estado = ESTADO_VENT_MEDIA;
+            calefactor_set(false);
+            ventilador_set_pwm(PWM_MEDIA);
+        } else {
+            g_estado = ESTADO_VENT_ALTA;
+            calefactor_set(false);
+            ventilador_set_pwm(PWM_ALTA);
+        }
     }
 }
 
 void actualizar_lcd(float temp, EstadoSistema_t st) {
     lcd_gotoxy(0, 0);
-    lcd_print("Temp: ");
+    lcd_print("T:");
     lcd_print_float(temp, 1);
-    lcd_data(' ');
     lcd_data(0);
-    lcd_print("C   ");
-
-    lcd_gotoxy(0, 1);
-    lcd_print("SP:");
-    lcd_print_float(g_umbrales.punto_medio, 1);
     lcd_print("C ");
 
     switch (st) {
-        case ESTADO_CALOR:      lcd_print("HEAT:ON "); break;
-        case ESTADO_CONFORT:    lcd_print("FAN:OFF "); break;
-        case ESTADO_VENT_BAJA:  lcd_print("FAN:35% "); break;
-        case ESTADO_VENT_MEDIA: lcd_print("FAN:70% "); break;
-        case ESTADO_VENT_ALTA:  lcd_print("FAN:100%"); break;
+        case ESTADO_CALOR:      lcd_print("CAL:ON "); break;
+        case ESTADO_CONFORT:    lcd_print("CONFORT"); break;
+        case ESTADO_VENT_BAJA:  lcd_print("VEN:35%"); break;
+        case ESTADO_VENT_MEDIA: lcd_print("VEN:70%"); break;
+        case ESTADO_VENT_ALTA:  lcd_print("VEN:MAX"); break;
     }
+
+    lcd_gotoxy(0, 1);
+    lcd_print("[");
+    lcd_print_int((int16_t)g_umbrales.umbral_conf_min);
+    lcd_print("-");
+    lcd_print_int((int16_t)g_umbrales.umbral_conf_max);
+    lcd_print("]C SP:");
+    lcd_print_float(g_umbrales.punto_medio, 1);
 }
 
 void enviar_telemetria(float temp, EstadoSistema_t st) {
-    const char *str_accion = "CONFORT (OFF)";
-    const char *str_cal = "OFF";
-    const char *str_vent = "0%";
+    const char *str_cal = (st == ESTADO_CALOR) ? "ON" : "OFF";
+    const char *str_accion = "CONFORT";
     uint8_t pwm_val = 0;
 
     switch (st) {
-        case ESTADO_CALOR:
-            str_accion = "CALEFACTOR ACTIVO";
-            str_cal = "ON";
-            break;
-        case ESTADO_CONFORT:
-            str_accion = "ZONA CONFORT (OFF)";
-            break;
-        case ESTADO_VENT_BAJA:
-            str_accion = "VENTILADOR BAJA";
-            str_vent = "35%";
-            pwm_val = PWM_BAJA;
-            break;
-        case ESTADO_VENT_MEDIA:
-            str_accion = "VENTILADOR MEDIA";
-            str_vent = "70%";
-            pwm_val = PWM_MEDIA;
-            break;
-        case ESTADO_VENT_ALTA:
-            str_accion = "VENTILADOR ALTA (URGENTE)";
-            str_vent = "100%";
-            pwm_val = PWM_ALTA;
-            break;
+        case ESTADO_CALOR:      str_accion = "CALEFACTOR ACTIVO"; break;
+        case ESTADO_CONFORT:    str_accion = "ZONA CONFORT (OFF)"; break;
+        case ESTADO_VENT_BAJA:  str_accion = "VENTILADOR BAJA (35%)"; pwm_val = PWM_BAJA; break;
+        case ESTADO_VENT_MEDIA: str_accion = "VENTILADOR MEDIA (70%)"; pwm_val = PWM_MEDIA; break;
+        case ESTADO_VENT_ALTA:  str_accion = "VENTILADOR ALTA (100%)"; pwm_val = PWM_ALTA; break;
     }
 
-    uart_print("[5s] Temp: ");
+    uart_print("[5s] T: ");
     uart_print_float(temp, 1);
-    uart_print(" C | Setpoint: ");
+    uart_print(" C | SP: ");
     uart_print_float(g_umbrales.punto_medio, 1);
-    uart_print(" C | Calefactor: ");
+    uart_print(" C | Cal: ");
     uart_print(str_cal);
-    uart_print(" | Ventilador: ");
-    uart_print(str_vent);
+    uart_print(" | Fan PWM: ");
+    uart_print_int(pwm_val);
     uart_print(" | ");
     uart_println(str_accion);
 
@@ -475,82 +500,46 @@ void enviar_telemetria(float temp, EstadoSistema_t st) {
     uart_println("");
 }
 
-void mostrar_menu(void) {
-    uart_println("\r\n================ MENU ================");
-    uart_println(" 1 - Consultar estado y umbrales");
-    uart_println(" + - Aumentar Punto Medio (+1.0 C)");
-    uart_println(" - - Disminuir Punto Medio (-1.0 C)");
-    uart_println(" 2 - Ingresar nuevo Punto Medio");
-    uart_println(" 3 - Restaurar Punto Medio base (20.5 C)");
-    uart_println(" 4 - Medir temperatura ahora");
-    uart_println("======================================");
-    uart_print("Opcion: ");
-}
-
-void mostrar_estado(void) {
-    uart_println("\r\n------------- ESTADO DEL SISTEMA -------------");
-    uart_print("Temperatura Actual:  ");
-    uart_print_float(g_temp_actual, 1);
-    uart_println(" C");
-
-    uart_print("Punto Medio (SP):    ");
-    uart_print_float(g_umbrales.punto_medio, 1);
-    uart_println(" C");
-
-    uart_println("--- Umbrales Recalibrados ---");
-    uart_print("  Calefactor ON:     < ");
-    uart_print_float(g_umbrales.umbral_cal, 1);
-    uart_println(" C");
-
-    uart_print("  Zona Confort:      [");
-    uart_print_float(g_umbrales.umbral_conf_min, 1);
-    uart_print(" a ");
-    uart_print_float(g_umbrales.umbral_conf_max, 1);
-    uart_println("] C");
-
-    uart_print("  Vent. Baja (35%):  [");
-    uart_print_float(g_umbrales.umbral_conf_max, 1);
-    uart_print(" a ");
-    uart_print_float(g_umbrales.umbral_baja_max, 1);
-    uart_println("] C");
-
-    uart_print("  Vent. Media (70%): [");
-    uart_print_float(g_umbrales.umbral_baja_max, 1);
-    uart_print(" a ");
-    uart_print_float(g_umbrales.umbral_med_max, 1);
-    uart_println("] C");
-
-    uart_print("  Vent. Alta (100%): > ");
-    uart_print_float(g_umbrales.umbral_med_max, 1);
-    uart_println(" C");
-    uart_println("----------------------------------------------\r\n");
-}
-
 bool validar_y_aplicar_sp(float nuevo_sp) {
     if (nuevo_sp < TEMP_SEGURA_MIN || nuevo_sp > TEMP_SEGURA_MAX) {
         uart_println("\r\n[ALERTA DE SEGURIDAD]");
-        uart_print("Valor ");
+        uart_print("Punto medio ");
         uart_print_float(nuevo_sp, 1);
-        uart_println(" C fuera de rango permitido (10.0 C a 38.0 C).");
-        uart_println("Punto medio muy cercano al limite maximo. Cambio RECHAZADO.\r\n");
+        uart_println(" C RECHAZADO.");
+        uart_println("Queda muy cercano al limite maximo del sensor DHT11 (50 C) o bajo 10 C.\r\n");
         return false;
     }
+
     recalcular_umbrales(nuevo_sp);
     uart_print("\r\n[OK] Punto medio actualizado a: ");
     uart_print_float(nuevo_sp, 1);
-    uart_println(" C. Umbrales recalibrados.\r\n");
+    uart_println(" C. Umbrales recalibrados con exito.\r\n");
     g_flag_medir = 1;
     return true;
 }
 
-void leer_nuevo_punto_medio(void) {
+void leer_nuevo_punto_medio_seguro(void) {
     char buf[12];
     uint8_t idx = 0;
-    uart_print("\r\nIngrese nuevo valor (Ej: 22.5) y presione Enter: ");
+    _delay_ms(30);
+    while (uart_available()) {
+        char dummy = UDR0;
+        (void)dummy;
+    }
 
-    while (idx < 11) {
-        char c = uart_receive();
+    uart_print("\r\nIngrese nuevo valor (Ej: 22.5) y Enter (Timeout 8s): ");
+
+    while (idx < 10) {
+        char c;
+        if (!uart_receive_timeout(&c, 8000)) {
+            uart_println("\r\n[TIMEOUT] Tiempo agotado. Operacion cancelada.");
+            return;
+        }
+
         if (c == '\r' || c == '\n') {
+            if (idx == 0) {
+                continue;
+            }
             uart_println("");
             break;
         } else if (c == '\b' || c == 127) {
@@ -573,18 +562,70 @@ void leer_nuevo_punto_medio(void) {
     }
 }
 
+void mostrar_menu(void) {
+    uart_println("\r\n================ MENU INTERACTIVO ================");
+    uart_println(" 1 - Consultar estado y umbrales");
+    uart_println(" + - Aumentar Punto Medio (+1.0 C)");
+    uart_println(" - - Disminuir Punto Medio (-1.0 C)");
+    uart_println(" 2 - Ingresar nuevo Punto Medio");
+    uart_println(" 3 - Restaurar Punto Medio base (20.5 C)");
+    uart_println(" 4 - Medir temperatura ahora");
+    uart_println("==================================================");
+    uart_print("Opcion: ");
+}
+
+void mostrar_estado(void) {
+    uart_println("\r\n------------- ESTADO DEL SISTEMA -------------");
+    uart_print("Temperatura Actual:  ");
+    uart_print_float(g_temp_actual, 1);
+    uart_println(" C");
+
+    uart_print("Punto Medio (SP):    ");
+    uart_print_float(g_umbrales.punto_medio, 1);
+    uart_println(" C");
+
+    uart_println("--- Umbrales Recalibrados ---");
+    uart_print("  Calefactor ON:     <= ");
+    uart_print_float(g_umbrales.umbral_cal, 1);
+    uart_println(" C");
+
+    uart_print("  Zona Confort:      [");
+    uart_print_int((int16_t)g_umbrales.umbral_conf_min);
+    uart_print(" a ");
+    uart_print_int((int16_t)g_umbrales.umbral_conf_max);
+    uart_println("] C");
+
+    uart_print("  Vent. Baja (35%):  [");
+    uart_print_int((int16_t)g_umbrales.umbral_conf_max);
+    uart_print(" a ");
+    uart_print_int((int16_t)g_umbrales.umbral_baja_max);
+    uart_println("] C");
+
+    uart_print("  Vent. Media (70%): [");
+    uart_print_int((int16_t)g_umbrales.umbral_baja_max);
+    uart_print(" a ");
+    uart_print_int((int16_t)g_umbrales.umbral_med_max);
+    uart_println("] C");
+
+    uart_print("  Vent. Alta (100%): > ");
+    uart_print_int((int16_t)g_umbrales.umbral_med_max);
+    uart_println(" C");
+    uart_println("----------------------------------------------\r\n");
+}
+
+/* =========================================================================
+ * MAIN
+ * ========================================================================= */
 int main(void) {
     MCUSR = 0;
     wdt_disable();
     cli();
 
     TIMSK0 = 0;
-    TIMSK1 = 0;
     TIMSK2 = 0;
 
     actuadores_init();
     uart_init(9600);
-    adc_init();
     lcd_init();
     timer1_init_1hz();
 
@@ -594,15 +635,16 @@ int main(void) {
     uart_println("\r\n========================================");
     uart_println("   CONTROL DE TEMPERATURA INTELIGENTE   ");
     uart_println("========================================");
-    uart_println("Presione 'm' para ver el menu.");
-    uart_println("Adquisicion cada 5 segundos iniciada...\r\n");
+    uart_println("Presione 'm' para ver el menu interactivo.");
+    uart_println("Medicion cada 5 segundos iniciada...\r\n");
 
     lcd_gotoxy(0, 0);
-    lcd_print("SISTEMA INICIADO");
+    lcd_print("SISTEMA LISTO   ");
     lcd_gotoxy(0, 1);
-    lcd_print("Climatizador OK ");
-    _delay_ms(500);
+    lcd_print("DHT11 Activo    ");
+    _delay_ms(1000);
     lcd_clear();
+
     while (1) {
         if (g_flag_medir) {
             g_flag_medir = 0;
@@ -635,12 +677,12 @@ int main(void) {
                     break;
 
                 case '2':
-                    leer_nuevo_punto_medio();
+                    leer_nuevo_punto_medio_seguro();
                     break;
 
                 case '3':
                     recalcular_umbrales(PUNTO_MEDIO_DEFAULT);
-                    uart_println("\r\n[OK] Punto medio reestablecido a 20.5 C.\r\n");
+                    uart_println("\r\n[OK] Punto medio restablecido a 20.5 C.\r\n");
                     g_flag_medir = 1;
                     break;
 

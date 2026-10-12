@@ -1,456 +1,471 @@
 #define F_CPU 16000000UL
-
 #include <avr/io.h>
+#include <avr/interrupt.h>
 #include <util/delay.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <avr/interrupt.h>
 
-#define BAUD 9600
-#define UBR 103
+// Dirección I2C del PCF8574 (Si en Proteus conectas A0, A1, A2 a VCC es 0x27; si van a GND es 0x20)
+#define PCF8574_ADDR 0x27
 
-#define SERVO_MIN 125
-#define SERVO_MAX 600
+// ==========================================
+// DEFINICIÓN DE FRECUENCIAS (Hz)
+// ==========================================
+#define SIL  0
 
-#define LED_PIN PD6
-#define NUM_LEDS_TIRA 30
+// Octava 3 (Bajos / Acompañamiento - Buzzer 2 en PB3)
+#define C3   131
+#define D3   147
+#define DS3  156
+#define EB3  156
+#define E3   165
+#define F3   175
+#define FS3  185
+#define G3   196
+#define GS3  208
+#define AB3  208
+#define A3   220
+#define AS3  233
+#define BB3  233   // Si bemol 3
+#define B3   247
 
-uint8_t g_lcd_addr = 0x27;
-#define LCD_RS 0x01
-#define LCD_EN 0x04
+// Octava 4 (Pulsadores y Melodía - Buzzer 1 en PB1)
+#define C4   262
+#define CS4  277
+#define D4   294
+#define DS4  311
+#define EB4  311
+#define E4   330
+#define F4   349
+#define FS4  370
+#define G4   392
+#define GS4  415
+#define AB4  415
+#define A4   440
+#define AS4  466
+#define BB4  466   // Si bemol 4
+#define B4   494
+
+// Octava 5 (Melodía aguda - Buzzer 1 en PB1)
+#define C5   523
+#define CS5  554
+#define D5   587
+#define DS5  622
+#define EB5  622
+#define E5   659
+#define F5   698
+#define FS5  740
+#define G5   784
+#define A5   880
+
+#define FREQ_TO_ICR1(f) ((f > 0) ? ((F_CPU / (8UL * (f))) - 1) : 0)
+
+typedef enum {
+	ESTADO_PIANO,
+	ESTADO_CANCION
+} EstadoSistema;
+
+volatile EstadoSistema estadoActual = ESTADO_PIANO;
+volatile char comandoUART = 0;
+volatile uint8_t nuevoComando = 0;
+
+// ==========================================
+// COMUNICACIÓN UART Y MENÚ INTERACTIVO
+// ==========================================
+void UART_Init(unsigned int baud) {
+	unsigned int ubrr = F_CPU / 16 / baud - 1;
+	UBRR0H = (unsigned char)(ubrr >> 8);
+	UBRR0L = (unsigned char)ubrr;
+	UCSR0B = (1 << RXEN0) | (1 << TXEN0) | (1 << RXCIE0);
+	UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
+}
+
+void UART_TxChar(char c) {
+	while (!(UCSR0A & (1 << UDRE0)));
+	UDR0 = c;
+}
+
+void UART_SendString(const char *str) {
+	while (*str) {
+		UART_TxChar(*str++);
+	}
+}
+
+void UART_MostrarMenu(void) {
+	UART_SendString("\r\n==================================================\r\n");
+	UART_SendString("    PIANO ELECTRONICO POLIFONICO - ATmega328P     \r\n");
+	UART_SendString("        Tecnologias de Microprocesamiento         \r\n");
+	UART_SendString("==================================================\r\n");
+	UART_SendString(" Comandos Disponibles por UART:\r\n");
+	UART_SendString("  [1] Cancion 1: Despacito (Luis Fonsi)\r\n");
+	UART_SendString("  [2] Cancion 2: The Imperial March (Star Wars)\r\n");
+	UART_SendString("  [3] Cancion 3: Married Life\r\n");
+	UART_SendString("  [S] o [0] Detener cancion y volver a Piano\r\n");
+	UART_SendString("  [M] Mostrar este menu interactivo\r\n");
+	UART_SendString("==================================================\r\n\r\n");
+}
+
+ISR(USART_RX_vect) {
+	comandoUART = UDR0;
+	nuevoComando = 1;
+}
+
+// ==========================================
+// DRIVER I2C / TWI
+// ==========================================
+void I2C_Init(void) {
+	TWSR = 0x00;
+	TWBR = 0x48; // SCL = 100 kHz a 16 MHz
+	TWCR = (1 << TWEN);
+}
+
+void I2C_Start(void) {
+	TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
+	while (!(TWCR & (1 << TWINT)));
+}
+
+void I2C_Stop(void) {
+	TWCR = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN);
+	_delay_us(100);
+}
+
+void I2C_Write(uint8_t data) {
+	TWDR = data;
+	TWCR = (1 << TWINT) | (1 << TWEN);
+	while (!(TWCR & (1 << TWINT)));
+}
+
+// ==========================================
+// PANTALLA LCD 16x2 I2C (PCF8574)
+// ==========================================
 #define LCD_BACKLIGHT 0x08
 
-typedef enum
-{
-    ROJO = 0,
-    AZUL,
-    VERDE,
-    VIOLETA,
-    ROSADO,
-    NINGUNO,
-    TOTAL_COLORES
-} color_detectado;
+void LCD_I2C_WriteNibble(uint8_t nibble, uint8_t mode) {
+	uint8_t data = (nibble & 0xF0) | mode | LCD_BACKLIGHT;
+	I2C_Start();
+	I2C_Write(PCF8574_ADDR << 1);
+	I2C_Write(data | 0x04);
+	_delay_us(1);
+	I2C_Write(data & ~0x04);
+	_delay_us(50);
+	I2C_Stop();
+}
 
-typedef struct
-{
-    const char *nombre;
-    uint8_t angulo;
-    uint8_t r_ref, g_ref, b_ref;
-    uint8_t led_r, led_g, led_b;
-} PerfilColor;
+void LCD_I2C_Cmd(uint8_t cmd) {
+	LCD_I2C_WriteNibble(cmd & 0xF0, 0);
+	LCD_I2C_WriteNibble((cmd << 4) & 0xF0, 0);
+	if (cmd == 0x01 || cmd == 0x02) _delay_ms(2);
+}
 
-const PerfilColor perfiles[TOTAL_COLORES] = {
-    [ROJO]    = {"ROJO",      0,  97,  87,  67, 255,   0,   0},
-    [AZUL]    = {"AZUL",     45,  60,  70, 185,   0,   0, 255},
-    [VERDE]   = {"VERDE",   135,  65, 180,  65,   0, 255,   0},
-    [VIOLETA] = {"VIOLETA",  90, 140,  60, 140, 128,   0, 255},
-    [ROSADO]  = {"ROSADO",  180, 170, 100, 120, 255, 105, 180},
-    [NINGUNO] = {"NINGUNO",  90,   0,   0,   0,   0,   0,   0}
+void LCD_I2C_Char(uint8_t data) {
+	LCD_I2C_WriteNibble(data & 0xF0, 1);
+	LCD_I2C_WriteNibble((data << 4) & 0xF0, 1);
+}
+
+void LCD_I2C_Init(void) {
+	_delay_ms(50);
+	LCD_I2C_WriteNibble(0x30, 0);
+	_delay_ms(5);
+	LCD_I2C_WriteNibble(0x30, 0);
+	_delay_us(200);
+	LCD_I2C_WriteNibble(0x30, 0);
+	LCD_I2C_WriteNibble(0x20, 0);
+
+	LCD_I2C_Cmd(0x28);
+	LCD_I2C_Cmd(0x0C);
+	LCD_I2C_Cmd(0x06);
+	LCD_I2C_Cmd(0x01);
+	_delay_ms(2);
+}
+
+void LCD_I2C_SetCursor(uint8_t row, uint8_t col) {
+	uint8_t addr = (row == 0) ? (0x80 + col) : (0xC0 + col);
+	LCD_I2C_Cmd(addr);
+}
+
+void LCD_I2C_String(const char *str) {
+	while (*str) LCD_I2C_Char((uint8_t)*str++);
+}
+
+// ==========================================
+// GENERACIÓN DE AUDIO POLIFÓNICO (2 BUZZERS)
+// ==========================================
+void PWM_Init(void) {
+	// Timer 1: Melodía / Altos en PB1 (Pin 15 / OC1A)
+	TCCR1A = (1 << COM1A1) | (1 << WGM11);
+	TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11); // Prescaler 8
+	DDRB |= (1 << PB1);
+	PORTB &= ~(1 << PB1);
+
+	// Timer 2: Bajos / Acompañamiento en PB3 (Pin 17 / OC2A)
+	TCCR2A = (1 << WGM21);
+	TCCR2B = (1 << CS22) | (1 << CS21); // Prescaler 256
+	DDRB |= (1 << PB3);
+	PORTB &= ~(1 << PB3);
+}
+
+void Set_Tone_Buzzer1(uint16_t freq) {
+	if (freq == 0) {
+		TCCR1A &= ~(1 << COM1A1);
+		PORTB &= ~(1 << PB1);
+		} else {
+		TCCR1A |= (1 << COM1A1);
+		ICR1 = FREQ_TO_ICR1(freq);
+		OCR1A = ICR1 / 2;
+	}
+}
+
+void Set_Tone_Buzzer2(uint16_t freq) {
+	if (freq == 0) {
+		TCCR2A &= ~(1 << COM2A0);
+		PORTB &= ~(1 << PB3);
+		} else {
+		TCCR2A |= (1 << COM2A0);
+		uint32_t val = (31250UL / freq) - 1;
+		if (val > 255) val = 255;
+		OCR2A = (uint8_t)val;
+	}
+}
+
+// ==========================================
+// LECTURA DE PULSADORES (CORREGIDO)
+// ==========================================
+uint8_t Leer_Pulsadores(uint16_t *freq_out, char *nota_out) {
+	if (!(PINB & (1 << PB0))) { *freq_out = C4; sprintf(nota_out, "DO (C4)"); return 1; }
+	if (!(PINB & (1 << PB2))) { *freq_out = D4; sprintf(nota_out, "RE (D4)"); return 1; }
+	if (!(PINB & (1 << PB4))) { *freq_out = E4; sprintf(nota_out, "MI (E4)"); return 1; }
+	if (!(PINB & (1 << PB5))) { *freq_out = F4; sprintf(nota_out, "FA (F4)"); return 1; }
+	if (!(PINC & (1 << PC0))) { *freq_out = G4; sprintf(nota_out, "SOL(G4)"); return 1; }
+	if (!(PINC & (1 << PC1))) { *freq_out = A4; sprintf(nota_out, "LA (A4)"); return 1; }
+	if (!(PINC & (1 << PC2))) { *freq_out = B4; sprintf(nota_out, "SI (B4)"); return 1; }
+	// CORRECCIÓN: Se agrega '*' a freq_out
+	if (!(PINC & (1 << PC3))) { *freq_out = C5; sprintf(nota_out, "DO (C5)"); return 1; }
+
+	*freq_out = 0;
+	return 0;
+}
+
+// ============================================================================
+// CANCIÓN 1: LUIS FONSI - "DESPACITO"
+// ============================================================================
+const uint16_t mel_c1[] = {
+	D5, CS5, B4, FS4, SIL,
+	FS4, FS4, FS4, FS4, B4, B4, B4, B4, B4, A4, B4, G4, SIL,
+	G4, G4, G4, G4, B4, B4, B4, B4, B4, CS5, D5, A4, SIL,
+	A4, A4, A4, A4, D5, D5, D5, D5, D5, E5, E5, CS5, SIL,
+	D5, CS5, B4, SIL
 };
 
-void USART_Init(unsigned int ubrr);
-void USART_Transmit(unsigned char data);
-void USART_SendString(const char *str);
+const uint16_t bajo_c1[] = {
+	B3, B3, B3, B3, SIL,
+	G3, G3, G3, G3, G3, G3, G3, G3, G3, G3, G3, G3, SIL,
+	D3, D3, D3, D3, D3, D3, D3, D3, D3, D3, D3, D3, SIL,
+	A3, A3, A3, A3, A3, A3, A3, A3, A3, A3, A3, A3, SIL,
+	B3, B3, B3, SIL
+};
 
-void ADC_Init(void);
-uint8_t ADC_Read(uint8_t channel);
-uint16_t ADC_ReadAvg(uint8_t channel, uint8_t samples);
+const uint16_t dur_c1[] = {
+	500, 300, 300, 700, 150,
+	200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 250, 600, 150,
+	200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 250, 600, 150,
+	200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 250, 600, 150,
+	450, 300, 800, 300
+};
+const uint8_t len_c1 = sizeof(mel_c1) / sizeof(mel_c1[0]);
 
-color_detectado clasificarColorReal(uint16_t r, uint16_t g, uint16_t b);
+// ============================================================================
+// CANCIÓN 2: STAR WARS - "THE IMPERIAL MARCH"
+// ============================================================================
+const uint16_t mel_c2[] = {
+	G4, G4, G4, DS4, AS4, G4, DS4, AS4, G4, SIL,
+	D5, D5, D5, DS5, AS4, FS4, DS4, AS4, G4, SIL
+};
 
-void servo_timer1_init(void);
-void servo_set_angle(uint8_t angle);
+const uint16_t bajo_c2[] = {
+	G3, G3, G3, G3,  D3,  G3, G3,  D3,  G3, SIL,
+	D3, D3, D3, DS3, AS3, D3, DS3, AS3, G3, SIL
+};
 
-void ws_send_byte(uint8_t b);
-void encender_tira_color(uint8_t r, uint8_t g, uint8_t b);
+const uint16_t dur_c2[] = {
+	500, 500, 500, 350, 150, 500, 350, 150, 800, 150,
+	500, 500, 500, 350, 150, 500, 350, 150, 800, 300
+};
+const uint8_t len_c2 = sizeof(mel_c2) / sizeof(mel_c2[0]);
 
-void I2C_Init(void);
-uint8_t I2C_Ping(uint8_t addr);
-void I2C_Start(void);
-void I2C_Stop(void);
-void I2C_Write(uint8_t data);
+// ============================================================================
+// CANCIÓN 3: "MARRIED LIFE"
+// ============================================================================
+const uint16_t mel_c3[] = {
+	SIL, SIL, SIL, SIL, SIL, SIL, SIL, SIL, SIL,
+	SIL, SIL, C5, D5,
+	F5, F5, F5, F5, E5, D5, C5, A4, F4,
+	G4, G4, G4, G4, A4, BB4, D5, C5, C5,
+	A4, A4, A4, A4, G4, F4,
+	G4, G4, G4, G4, A4, BB4, C5, BB4, A4,
+	G4, F4, F4, F4, SIL
+};
 
-void LCD_I2C_WriteExpander(uint8_t data);
-void LCD_PulseEnable(uint8_t data);
-void LCD_Send4Bits(uint8_t value);
-void LCD_Command(uint8_t cmd);
-void LCD_Char(uint8_t data);
-void LCD_Init(void);
-void LCD_String(const char *str);
-void LCD_SetCursor(uint8_t row, uint8_t col);
-void LCD_Clear(void);
+const uint16_t bajo_c3[] = {
+	F3, A3, C4, C3, A3, C4, F3, A3, C4,
+	C3, A3, C4, C4,
+	F3, A3, C4, C3, A3, C4, F3, A3, C4,
+	C3, G3, BB3, C3, G3, BB3, F3, A3, C4,
+	D3, F3, A3, D3, F3, A3,
+	G3, BB3, D4, C3, E3, G3, C3, G3, BB3,
+	C3, F3, A3, F3, SIL
+};
 
-int main(void)
-{
-    DDRD |= (1 << LED_PIN);
+const uint16_t dur_c3[] = {
+	380, 380, 380, 380, 380, 380, 380, 380, 380,
+	380, 380, 190, 190,
+	380, 380, 380, 380, 380, 380, 380, 380, 380,
+	380, 380, 380, 380, 380, 380, 380, 380, 380,
+	380, 380, 380, 380, 380, 380,
+	380, 380, 380, 380, 380, 380, 380, 380, 380,
+	380, 380, 380, 1000, 300
+};
+const uint8_t len_c3 = sizeof(mel_c3) / sizeof(mel_c3[0]);
 
-    USART_Init(UBR);
-    ADC_Init();
-    servo_timer1_init();
-    LCD_Init();
+// ==========================================
+// MOTOR DE REPRODUCCIÓN POLIFÓNICO
+// ==========================================
+void Reproducir_Cancion(const uint16_t *mel, const uint16_t *bajo, const uint16_t *dur, uint8_t len, const char *nombre) {
+	LCD_I2C_Cmd(0x01);
+	LCD_I2C_SetCursor(0, 0);
+	LCD_I2C_String("Reproduciendo:");
+	LCD_I2C_SetCursor(1, 0);
+	LCD_I2C_String(nombre);
 
-    USART_SendString("\r\n========================================\r\n");
-    USART_SendString(" Sistema Clasificador Listo y Calibrado\r\n");
-    USART_SendString("========================================\r\n\r\n");
+	UART_SendString("\r\n[REPRODUCCION] ");
+	UART_SendString(nombre);
+	UART_SendString("\r\n");
 
-    LCD_Clear();
-    LCD_SetCursor(0, 0);
-    LCD_String("Clasificador");
-    LCD_SetCursor(1, 0);
-    LCD_String("Listo");
-    _delay_ms(1500);
+	uint8_t abortar = 0;
 
-    uint16_t valor_R, valor_G, valor_B;
-    int16_t dif_R = 0, dif_G = 0, dif_B = 0;
-    color_detectado color;
-    char serial_buf[70];
-    char lcd_line[17];
+	for (uint8_t i = 0; i < len; i++) {
+		if (nuevoComando) {
+			if (comandoUART == 'S' || comandoUART == 's' ||
+			comandoUART == '0' || comandoUART == 'P' || comandoUART == 'p') {
+				nuevoComando = 0;
+				UART_SendString("[UART] Detencion manual solicitada.\r\n");
+				break;
+			}
+		}
 
-    while (1)
-    {
-        encender_tira_color(255, 0, 0);
-        _delay_ms(120);
-        valor_R = ADC_ReadAvg(0, 16);
+		Set_Tone_Buzzer1(mel[i]);
+		Set_Tone_Buzzer2(bajo[i]);
 
-        encender_tira_color(0, 255, 0);
-        _delay_ms(120);
-        valor_G = ADC_ReadAvg(0, 16);
+		for (uint16_t t = 0; t < dur[i]; t += 10) {
+			_delay_ms(10);
+			if (nuevoComando && (comandoUART == 'S' || comandoUART == 's' ||
+			comandoUART == '0' || comandoUART == 'P' || comandoUART == 'p')) {
+				abortar = 1;
+				break;
+			}
+		}
 
-        encender_tira_color(0, 0, 255);
-        _delay_ms(120);
-        valor_B = ADC_ReadAvg(0, 16);
+		Set_Tone_Buzzer1(0);
+		Set_Tone_Buzzer2(0);
+		_delay_ms(25);
 
-        color = clasificarColorReal(valor_R, valor_G, valor_B);
-        const PerfilColor *p = &perfiles[color];
+		if (abortar) {
+			nuevoComando = 0;
+			UART_SendString("[UART] Detencion manual solicitada.\r\n");
+			break;
+		}
+	}
 
-        servo_set_angle(p->angulo);
-        encender_tira_color(p->led_r, p->led_g, p->led_b);
+	Set_Tone_Buzzer1(0);
+	Set_Tone_Buzzer2(0);
+	estadoActual = ESTADO_PIANO;
 
-        if (color != NINGUNO)
-        {
-            dif_R = (int16_t)valor_R - (int16_t)p->r_ref;
-            dif_G = (int16_t)valor_G - (int16_t)p->g_ref;
-            dif_B = (int16_t)valor_B - (int16_t)p->b_ref;
-        }
-        else
-        {
-            dif_R = dif_G = dif_B = 0;
-        }
+	LCD_I2C_Cmd(0x01);
+	LCD_I2C_SetCursor(0, 0);
+	LCD_I2C_String("Modo: Piano");
 
-        USART_SendString("---------- MEDICION RGB ----------\r\n");
-        sprintf(serial_buf, "Lectura ADC : R:%3u  G:%3u  B:%3u\r\n", valor_R, valor_G, valor_B);
-        USART_SendString(serial_buf);
-
-        USART_SendString("Color Detect: ");
-        USART_SendString(p->nombre);
-        USART_SendString("\r\n");
-
-        sprintf(serial_buf, "Angulo Servo: %u deg\r\n", p->angulo);
-        USART_SendString(serial_buf);
-
-        if (color != NINGUNO)
-        {
-            sprintf(serial_buf, "Patron Ref  : R:%3u  G:%3u  B:%3u\r\n", p->r_ref, p->g_ref, p->b_ref);
-            USART_SendString(serial_buf);
-            sprintf(serial_buf, "Diferencias : R:%+3d  G:%+3d  B:%+3d\r\n", dif_R, dif_G, dif_B);
-            USART_SendString(serial_buf);
-        }
-        else
-        {
-            USART_SendString("Patron Ref  : N/A\r\n");
-            USART_SendString("Diferencias : N/A\r\n");
-        }
-        USART_SendString("----------------------------------\r\n\r\n");
-        LCD_Clear();
-        LCD_SetCursor(0, 0);
-        sprintf(lcd_line, "%-8s A:%3u", p->nombre, p->angulo);
-        LCD_String(lcd_line);
-
-        LCD_SetCursor(1, 0);
-        sprintf(lcd_line, "L:R%03u G%03u B%03u", valor_R, valor_G, valor_B);
-        LCD_String(lcd_line);
-        _delay_ms(2000);
-
-        LCD_Clear();
-        if (color != NINGUNO)
-        {
-            LCD_SetCursor(0, 0);
-            sprintf(lcd_line, "P:R%03u G%03u B%03u", p->r_ref, p->g_ref, p->b_ref);
-            LCD_String(lcd_line);
-
-            LCD_SetCursor(1, 0);
-            sprintf(lcd_line, "D:%+3d %+3d %+3d", dif_R, dif_G, dif_B);
-            LCD_String(lcd_line);
-        }
-        else
-        {
-            LCD_SetCursor(0, 0);
-            LCD_String("Sin Referencia");
-            LCD_SetCursor(1, 0);
-            LCD_String("Fuera de Rango");
-        }
-        _delay_ms(2000);
-    }
+	UART_SendString("[FSM] Cancion finalizada. Retorno a MODO PIANO.\r\n");
 }
 
-color_detectado clasificarColorReal(uint16_t r, uint16_t g, uint16_t b)
-{
-    if (r < 18 && g < 18 && b < 18) return NINGUNO;
-    if (r > 235 && g > 235 && b > 235) return NINGUNO;
-		
-    if ((r >= g + 4) && (r >= b + 15))
-    {
-        return ROJO;
-    }
+// ==========================================
+// PROGRAMA PRINCIPAL
+// ==========================================
+int main(void) {
+	// Entradas con Pull-Up activo para pulsadores
+	DDRB &= ~((1 << PB0) | (1 << PB2) | (1 << PB4) | (1 << PB5));
+	PORTB |= (1 << PB0) | (1 << PB2) | (1 << PB4) | (1 << PB5);
 
-    if ((g >= r + 6) && (g >= b + 6))
-    {
-        return VERDE;
-    }
+	DDRC &= ~((1 << PC0) | (1 << PC1) | (1 << PC2) | (1 << PC3));
+	PORTC |= (1 << PC0) | (1 << PC1) | (1 << PC2) | (1 << PC3);
 
-    if ((b >= r + 6) && (b >= g + 4))
-    {
-        return AZUL;
-    }
+	// Pull-up para las líneas SDA (PC4) y SCL (PC5)
+	PORTC |= (1 << PC4) | (1 << PC5);
 
-    if ((r >= g + 6) && (b >= g + 6))
-    {
-        return VIOLETA;
-    }
+	I2C_Init();
+	LCD_I2C_Init();
+	PWM_Init();
+	UART_Init(9600);
+	sei();
 
-    if ((r >= g + 10) && (r > b) && (b > g))
-    {
-        return ROSADO;
-    }
+	LCD_I2C_SetCursor(0, 0);
+	LCD_I2C_String("Modo: Piano");
 
-    return NINGUNO;
-}
+	UART_MostrarMenu();
 
-void servo_timer1_init(void)
-{
-    DDRB |= (1 << PB1);
-    TCCR1A = (1 << COM1A1) | (1 << WGM11);
-    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11) | (1 << CS10);
-    ICR1 = 4999;
-}
+	uint16_t frecuencia = 0;
+	char nombreNota[12];
+	uint8_t notaPrevia = 0;
 
-void servo_set_angle(uint8_t angle)
-{
-    if (angle > 180) angle = 180;
-    uint16_t pulse = SERVO_MIN + ((uint32_t)angle * (SERVO_MAX - SERVO_MIN)) / 180;
-    OCR1A = pulse;
-}
+	while (1) {
+		if (nuevoComando) {
+			char cmd = comandoUART;
+			nuevoComando = 0;
 
-void ws_send_byte(uint8_t b)
-{
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        if (b & 0x80)
-        {
-            PORTD |= (1 << LED_PIN);
-            asm volatile("nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t");
-            PORTD &= ~(1 << LED_PIN);
-            asm volatile("nop\n\t nop\n\t nop\n\t nop\n\t");
-        }
-        else
-        {
-            PORTD |= (1 << LED_PIN);
-            asm volatile("nop\n\t nop\n\t nop\n\t");
-            PORTD &= ~(1 << LED_PIN);
-            asm volatile("nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t nop\n\t");
-        }
-        b <<= 1;
-    }
-}
+			if (cmd == '1') {
+				estadoActual = ESTADO_CANCION;
+				Reproducir_Cancion(mel_c1, bajo_c1, dur_c1, len_c1, "1: Despacito");
+				} else if (cmd == '2') {
+				estadoActual = ESTADO_CANCION;
+				Reproducir_Cancion(mel_c2, bajo_c2, dur_c2, len_c2, "2: Imperial M.");
+				} else if (cmd == '3') {
+				estadoActual = ESTADO_CANCION;
+				Reproducir_Cancion(mel_c3, bajo_c3, dur_c3, len_c3, "3: Married Life");
+				} else if (cmd == 'S' || cmd == 's' || cmd == '0' || cmd == 'P' || cmd == 'p') {
+				Set_Tone_Buzzer1(0);
+				Set_Tone_Buzzer2(0);
+				estadoActual = ESTADO_PIANO;
+				LCD_I2C_Cmd(0x01);
+				LCD_I2C_SetCursor(0, 0);
+				LCD_I2C_String("Modo: Piano");
+				UART_SendString("[UART] En MODO PIANO MANUAL.\r\n");
+				} else if (cmd == 'M' || cmd == 'm' || cmd == '?') {
+				UART_MostrarMenu();
+			}
+		}
 
-void encender_tira_color(uint8_t r, uint8_t g, uint8_t b)
-{
-    cli();
-    for (uint8_t i = 0; i < NUM_LEDS_TIRA; i++)
-    {
-        ws_send_byte(r);
-        ws_send_byte(g);
-        ws_send_byte(b);
-    }
-    sei();
-    _delay_us(60);
-}
+		if (estadoActual == ESTADO_PIANO) {
+			if (Leer_Pulsadores(&frecuencia, nombreNota)) {
+				Set_Tone_Buzzer1(frecuencia);
+				Set_Tone_Buzzer2(0);
 
-void ADC_Init(void)
-{
-    ADMUX = (1 << REFS0) | (1 << ADLAR);
-    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
-}
+				if (!notaPrevia) {
+					LCD_I2C_SetCursor(1, 0);
+					LCD_I2C_String("Nota: ");
+					LCD_I2C_String(nombreNota);
 
-uint8_t ADC_Read(uint8_t channel)
-{
-    ADMUX = (ADMUX & 0xF0) | (channel & 0x0F);
-    ADCSRA |= (1 << ADSC);
-    while (ADCSRA & (1 << ADSC))
-        ;
-    return ADCH;
-}
+					UART_SendString("Nota pulsada: ");
+					UART_SendString(nombreNota);
+					UART_SendString("\r\n");
+					notaPrevia = 1;
+				}
+				} else {
+				Set_Tone_Buzzer1(0);
+				Set_Tone_Buzzer2(0);
 
-uint16_t ADC_ReadAvg(uint8_t channel, uint8_t samples)
-{
-    uint32_t sum = 0;
-    for (uint8_t i = 0; i < samples; i++)
-    {
-        sum += ADC_Read(channel);
-        _delay_us(50);
-    }
-    return (uint16_t)(sum / samples);
-}
-
-void USART_Init(unsigned int ubrr)
-{
-    UBRR0H = (unsigned char)(ubrr >> 8);
-    UBRR0L = (unsigned char)ubrr;
-    UCSR0B = (1 << RXEN0) | (1 << TXEN0);
-    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
-}
-
-void USART_Transmit(unsigned char data)
-{
-    while (!(UCSR0A & (1 << UDRE0)))
-        ;
-    UDR0 = data;
-}
-
-void USART_SendString(const char *str)
-{
-    while (*str)
-        USART_Transmit(*str++);
-}
-
-void I2C_Init(void)
-{
-    TWSR = 0x00;
-    TWBR = 72;
-}
-
-void I2C_Start(void)
-{
-    TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
-    while (!(TWCR & (1 << TWINT)))
-        ;
-}
-
-void I2C_Stop(void)
-{
-    TWCR = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN);
-    _delay_us(100);
-}
-
-void I2C_Write(uint8_t data)
-{
-    TWDR = data;
-    TWCR = (1 << TWINT) | (1 << TWEN);
-    while (!(TWCR & (1 << TWINT)))
-        ;
-}
-
-uint8_t I2C_Ping(uint8_t addr)
-{
-    TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
-    uint16_t to = 10000;
-    while (!(TWCR & (1 << TWINT)) && --to);
-    if (!to) return 0;
-
-    TWDR = (addr << 1);
-    TWCR = (1 << TWINT) | (1 << TWEN);
-    to = 10000;
-    while (!(TWCR & (1 << TWINT)) && --to);
-    if (!to) return 0;
-
-    uint8_t ack = ((TWSR & 0xF8) == 0x18);
-    TWCR = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN);
-    _delay_us(100);
-    return ack;
-}
-
-void LCD_I2C_WriteExpander(uint8_t data)
-{
-    I2C_Start();
-    I2C_Write((g_lcd_addr << 1));
-    I2C_Write(data | LCD_BACKLIGHT);
-    I2C_Stop();
-}
-
-void LCD_PulseEnable(uint8_t data)
-{
-    LCD_I2C_WriteExpander(data | LCD_EN);
-    _delay_us(2);
-    LCD_I2C_WriteExpander(data & ~LCD_EN);
-    _delay_us(50);
-}
-
-void LCD_Send4Bits(uint8_t value)
-{
-    LCD_I2C_WriteExpander(value);
-    LCD_PulseEnable(value);
-}
-
-void LCD_Command(uint8_t cmd)
-{
-    uint8_t high = cmd & 0xF0;
-    uint8_t low  = (cmd << 4) & 0xF0;
-    LCD_Send4Bits(high);
-    LCD_Send4Bits(low);
-    _delay_ms(2);
-}
-
-void LCD_Char(uint8_t data)
-{
-    uint8_t high = data & 0xF0;
-    uint8_t low  = (data << 4) & 0xF0;
-    LCD_Send4Bits(high | LCD_RS);
-    LCD_Send4Bits(low | LCD_RS);
-    _delay_ms(1);
-}
-
-void LCD_Init(void)
-{
-    I2C_Init();
-    _delay_ms(50);
-
-    if (I2C_Ping(0x27))
-        g_lcd_addr = 0x27;
-    else if (I2C_Ping(0x3F))
-        g_lcd_addr = 0x3F;
-
-    LCD_Send4Bits(0x30);
-    _delay_ms(5);
-    LCD_Send4Bits(0x30);
-    _delay_us(150);
-    LCD_Send4Bits(0x30);
-    _delay_ms(5);
-    LCD_Send4Bits(0x20);
-    _delay_ms(5);
-
-    LCD_Command(0x28);
-    LCD_Command(0x08);
-    LCD_Command(0x01);
-    _delay_ms(5);
-    LCD_Command(0x06);
-    LCD_Command(0x0C);
-}
-
-void LCD_String(const char *str)
-{
-    while (*str)
-        LCD_Char(*str++);
-}
-
-void LCD_SetCursor(uint8_t row, uint8_t col)
-{
-    uint8_t address = col;
-    if (row == 1) address += 0x40;
-    LCD_Command(0x80 | address);
-}
-
-void LCD_Clear(void)
-{
-    LCD_Command(0x01);
-    _delay_ms(5);
+				if (notaPrevia) {
+					LCD_I2C_SetCursor(1, 0);
+					LCD_I2C_String("                ");
+					notaPrevia = 0;
+				}
+			}
+		}
+	}
 }

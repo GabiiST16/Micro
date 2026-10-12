@@ -9,8 +9,8 @@
 #define BAUD 9600
 #define UBR 103
 
-#define SERVO_MIN 125 // ~0.5 ms -> 0 grados
-#define SERVO_MAX 600 // ~2.4 ms -> 180 grados
+#define SERVO_MIN 125
+#define SERVO_MAX 600
 
 #define LED_PIN PD6
 #define NUM_LEDS_TIRA 30
@@ -35,8 +35,8 @@ typedef struct
 {
     const char *nombre;
     uint8_t angulo;
-    uint8_t r_ref, g_ref, b_ref; // Patrón de referencia ideal
-    uint8_t led_r, led_g, led_b; // Color proyectado en la tira
+    uint8_t r_ref, g_ref, b_ref;
+    uint8_t led_r, led_g, led_b;
 } PerfilColor;
 
 const PerfilColor perfiles[TOTAL_COLORES] = {
@@ -103,20 +103,20 @@ int main(void)
     uint16_t valor_R, valor_G, valor_B;
     int16_t dif_R = 0, dif_G = 0, dif_B = 0;
     color_detectado color;
-    char serial_buf[70]; // Buffer grande para evitar desbordamiento
+    char serial_buf[70];
     char lcd_line[17];
 
     while (1)
     {
-        encender_tira_color(255, 0, 0); // Rojo
+        encender_tira_color(255, 0, 0);
         _delay_ms(120);
         valor_R = ADC_ReadAvg(0, 16);
 
-        encender_tira_color(0, 255, 0); // Verde
+        encender_tira_color(0, 255, 0);
         _delay_ms(120);
         valor_G = ADC_ReadAvg(0, 16);
 
-        encender_tira_color(0, 0, 255); // Azul
+        encender_tira_color(0, 0, 255);
         _delay_ms(120);
         valor_B = ADC_ReadAvg(0, 16);
 

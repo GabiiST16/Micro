@@ -433,7 +433,7 @@ void LCD_Init(void)
     I2C_Init();
     _delay_ms(100);
 
-    // Auto-deteccion de direccion I2C (cubre PCF8574 y PCF8574A: 0x20 a 0x3F)
+    // Auto-deteccion de direccion I2C 
     for (uint8_t a = 0x20; a <= 0x3F; a++)
     {
         if (I2C_Ping(a))

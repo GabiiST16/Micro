@@ -13,7 +13,7 @@
 #define SERVO_MAX 600
 
 #define LED_PIN PD6
-#define NUM_LEDS_TIRA 30
+#define NUM_LEDS_TIRA 64 // Matriz 8x8 (64 LEDs para simulacion)
 
 uint8_t g_lcd_addr = 0x27;
 #define LCD_RS 0x01
@@ -91,7 +91,11 @@ int main(void)
 
     USART_SendString("\r\n========================================\r\n");
     USART_SendString(" Sistema Clasificador (Modo Simulacion)\r\n");
-    USART_SendString("========================================\r\n\r\n");
+    USART_SendString("========================================\r\n");
+    
+    char dbg_buf[50];
+    sprintf(dbg_buf, "Estado LCD I2C: Dir 0x%02X\r\n\r\n", g_lcd_addr);
+    USART_SendString(dbg_buf);
 
     LCD_Clear();
     LCD_SetCursor(0, 0);
@@ -279,9 +283,9 @@ void encender_tira_color(uint8_t r, uint8_t g, uint8_t b)
     cli();
     for (uint8_t i = 0; i < NUM_LEDS_TIRA; i++)
     {
-        ws_send_byte(r);
-        ws_send_byte(g);
-        ws_send_byte(b);
+        ws_send_byte(g); // Verde primero (estándar GRB de WS2812)
+        ws_send_byte(r); // Rojo
+        ws_send_byte(b); // Azul
     }
     sei();
     _delay_us(60);
@@ -350,6 +354,8 @@ void I2C_Start(void)
 void I2C_Stop(void)
 {
     TWCR = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN);
+    while (TWCR & (1 << TWSTO))
+        ;
     _delay_us(100);
 }
 
@@ -376,6 +382,8 @@ uint8_t I2C_Ping(uint8_t addr)
 
     uint8_t ack = ((TWSR & 0xF8) == 0x18);
     TWCR = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN);
+    while (TWCR & (1 << TWSTO))
+        ;
     _delay_us(100);
     return ack;
 }
@@ -391,9 +399,9 @@ void LCD_I2C_WriteExpander(uint8_t data)
 void LCD_PulseEnable(uint8_t data)
 {
     LCD_I2C_WriteExpander(data | LCD_EN);
-    _delay_us(2);
+    _delay_ms(1);
     LCD_I2C_WriteExpander(data & ~LCD_EN);
-    _delay_us(50);
+    _delay_ms(1);
 }
 
 void LCD_Send4Bits(uint8_t value)
@@ -408,7 +416,7 @@ void LCD_Command(uint8_t cmd)
     uint8_t low  = (cmd << 4) & 0xF0;
     LCD_Send4Bits(high);
     LCD_Send4Bits(low);
-    _delay_ms(2);
+    _delay_ms(4);
 }
 
 void LCD_Char(uint8_t data)
@@ -417,34 +425,43 @@ void LCD_Char(uint8_t data)
     uint8_t low  = (data << 4) & 0xF0;
     LCD_Send4Bits(high | LCD_RS);
     LCD_Send4Bits(low | LCD_RS);
-    _delay_ms(1);
+    _delay_ms(2);
 }
 
 void LCD_Init(void)
 {
     I2C_Init();
-    _delay_ms(50);
+    _delay_ms(100);
 
-    if (I2C_Ping(0x27))
-        g_lcd_addr = 0x27;
-    else if (I2C_Ping(0x3F))
-        g_lcd_addr = 0x3F;
+    // Auto-deteccion de direccion I2C (cubre PCF8574 y PCF8574A: 0x20 a 0x3F)
+    for (uint8_t a = 0x20; a <= 0x3F; a++)
+    {
+        if (I2C_Ping(a))
+        {
+            g_lcd_addr = a;
+            break;
+        }
+    }
 
+    LCD_Send4Bits(0x30);
+    _delay_ms(10);
     LCD_Send4Bits(0x30);
     _delay_ms(5);
-    LCD_Send4Bits(0x30);
-    _delay_us(150);
     LCD_Send4Bits(0x30);
     _delay_ms(5);
     LCD_Send4Bits(0x20);
     _delay_ms(5);
 
     LCD_Command(0x28);
+    _delay_ms(2);
     LCD_Command(0x08);
+    _delay_ms(2);
     LCD_Command(0x01);
-    _delay_ms(5);
+    _delay_ms(10);
     LCD_Command(0x06);
+    _delay_ms(2);
     LCD_Command(0x0C);
+    _delay_ms(5);
 }
 
 void LCD_String(const char *str)

@@ -4,15 +4,9 @@
 #include <util/delay.h>
 #include <stdio.h>
 
-// Dirección I2C del PCF8574 (Si en Proteus conectas A0, A1, A2 a VCC es 0x27; si van a GND es 0x20)
 #define PCF8574_ADDR 0x27
-
-// ==========================================
-// DEFINICIÓN DE FRECUENCIAS (Hz)
-// ==========================================
 #define SIL  0
 
-// Octava 3 (Bajos / Acompañamiento - Buzzer 2 en PB3)
 #define C3   131
 #define D3   147
 #define DS3  156
@@ -25,10 +19,9 @@
 #define AB3  208
 #define A3   220
 #define AS3  233
-#define BB3  233   // Si bemol 3
+#define BB3  233
 #define B3   247
 
-// Octava 4 (Pulsadores y Melodía - Buzzer 1 en PB1)
 #define C4   262
 #define CS4  277
 #define D4   294
@@ -42,10 +35,9 @@
 #define AB4  415
 #define A4   440
 #define AS4  466
-#define BB4  466   // Si bemol 4
+#define BB4  466
 #define B4   494
 
-// Octava 5 (Melodía aguda - Buzzer 1 en PB1)
 #define C5   523
 #define CS5  554
 #define D5   587
@@ -68,9 +60,6 @@ volatile EstadoSistema estadoActual = ESTADO_PIANO;
 volatile char comandoUART = 0;
 volatile uint8_t nuevoComando = 0;
 
-// ==========================================
-// COMUNICACIÓN UART Y MENÚ INTERACTIVO
-// ==========================================
 void UART_Init(unsigned int baud) {
 	unsigned int ubrr = F_CPU / 16 / baud - 1;
 	UBRR0H = (unsigned char)(ubrr >> 8);
@@ -109,12 +98,9 @@ ISR(USART_RX_vect) {
 	nuevoComando = 1;
 }
 
-// ==========================================
-// DRIVER I2C / TWI
-// ==========================================
 void I2C_Init(void) {
 	TWSR = 0x00;
-	TWBR = 0x48; // SCL = 100 kHz a 16 MHz
+	TWBR = 0x48;
 	TWCR = (1 << TWEN);
 }
 
@@ -134,9 +120,6 @@ void I2C_Write(uint8_t data) {
 	while (!(TWCR & (1 << TWINT)));
 }
 
-// ==========================================
-// PANTALLA LCD 16x2 I2C (PCF8574)
-// ==========================================
 #define LCD_BACKLIGHT 0x08
 
 void LCD_I2C_WriteNibble(uint8_t nibble, uint8_t mode) {
@@ -186,19 +169,16 @@ void LCD_I2C_String(const char *str) {
 	while (*str) LCD_I2C_Char((uint8_t)*str++);
 }
 
-// ==========================================
-// GENERACIÓN DE AUDIO POLIFÓNICO (2 BUZZERS)
-// ==========================================
 void PWM_Init(void) {
 	// Timer 1: Melodía / Altos en PB1 (Pin 15 / OC1A)
 	TCCR1A = (1 << COM1A1) | (1 << WGM11);
-	TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11); // Prescaler 8
+	TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11);
 	DDRB |= (1 << PB1);
 	PORTB &= ~(1 << PB1);
 
 	// Timer 2: Bajos / Acompañamiento en PB3 (Pin 17 / OC2A)
 	TCCR2A = (1 << WGM21);
-	TCCR2B = (1 << CS22) | (1 << CS21); // Prescaler 256
+	TCCR2B = (1 << CS22) | (1 << CS21);
 	DDRB |= (1 << PB3);
 	PORTB &= ~(1 << PB3);
 }
@@ -226,9 +206,6 @@ void Set_Tone_Buzzer2(uint16_t freq) {
 	}
 }
 
-// ==========================================
-// LECTURA DE PULSADORES (CORREGIDO)
-// ==========================================
 uint8_t Leer_Pulsadores(uint16_t *freq_out, char *nota_out) {
 	if (!(PINB & (1 << PB0))) { *freq_out = C4; sprintf(nota_out, "DO (C4)"); return 1; }
 	if (!(PINB & (1 << PB2))) { *freq_out = D4; sprintf(nota_out, "RE (D4)"); return 1; }
@@ -244,9 +221,6 @@ uint8_t Leer_Pulsadores(uint16_t *freq_out, char *nota_out) {
 	return 0;
 }
 
-// ============================================================================
-// CANCIÓN 1: LUIS FONSI - "DESPACITO"
-// ============================================================================
 const uint16_t mel_c1[] = {
 	D5, CS5, B4, FS4, SIL,
 	FS4, FS4, FS4, FS4, B4, B4, B4, B4, B4, A4, B4, G4, SIL,
@@ -272,9 +246,6 @@ const uint16_t dur_c1[] = {
 };
 const uint8_t len_c1 = sizeof(mel_c1) / sizeof(mel_c1[0]);
 
-// ============================================================================
-// CANCIÓN 2: STAR WARS - "THE IMPERIAL MARCH"
-// ============================================================================
 const uint16_t mel_c2[] = {
 	G4, G4, G4, DS4, AS4, G4, DS4, AS4, G4, SIL,
 	D5, D5, D5, DS5, AS4, FS4, DS4, AS4, G4, SIL
@@ -291,9 +262,6 @@ const uint16_t dur_c2[] = {
 };
 const uint8_t len_c2 = sizeof(mel_c2) / sizeof(mel_c2[0]);
 
-// ============================================================================
-// CANCIÓN 3: "MARRIED LIFE"
-// ============================================================================
 const uint16_t mel_c3[] = {
 	SIL, SIL, SIL, SIL, SIL, SIL, SIL, SIL, SIL,
 	SIL, SIL, C5, D5,
@@ -325,9 +293,6 @@ const uint16_t dur_c3[] = {
 };
 const uint8_t len_c3 = sizeof(mel_c3) / sizeof(mel_c3[0]);
 
-// ==========================================
-// MOTOR DE REPRODUCCIÓN POLIFÓNICO
-// ==========================================
 void Reproducir_Cancion(const uint16_t *mel, const uint16_t *bajo, const uint16_t *dur, uint8_t len, const char *nombre) {
 	LCD_I2C_Cmd(0x01);
 	LCD_I2C_SetCursor(0, 0);
@@ -385,18 +350,13 @@ void Reproducir_Cancion(const uint16_t *mel, const uint16_t *bajo, const uint16_
 	UART_SendString("[FSM] Cancion finalizada. Retorno a MODO PIANO.\r\n");
 }
 
-// ==========================================
-// PROGRAMA PRINCIPAL
-// ==========================================
 int main(void) {
-	// Entradas con Pull-Up activo para pulsadores
 	DDRB &= ~((1 << PB0) | (1 << PB2) | (1 << PB4) | (1 << PB5));
 	PORTB |= (1 << PB0) | (1 << PB2) | (1 << PB4) | (1 << PB5);
 
 	DDRC &= ~((1 << PC0) | (1 << PC1) | (1 << PC2) | (1 << PC3));
 	PORTC |= (1 << PC0) | (1 << PC1) | (1 << PC2) | (1 << PC3);
 
-	// Pull-up para las líneas SDA (PC4) y SCL (PC5)
 	PORTC |= (1 << PC4) | (1 << PC5);
 
 	I2C_Init();

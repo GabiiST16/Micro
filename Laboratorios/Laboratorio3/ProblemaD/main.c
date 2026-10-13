@@ -170,13 +170,11 @@ void LCD_I2C_String(const char *str) {
 }
 
 void PWM_Init(void) {
-	// Timer 1: Melodía / Altos en PB1 (Pin 15 / OC1A)
 	TCCR1A = (1 << COM1A1) | (1 << WGM11);
 	TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11);
 	DDRB |= (1 << PB1);
 	PORTB &= ~(1 << PB1);
 
-	// Timer 2: Bajos / Acompañamiento en PB3 (Pin 17 / OC2A)
 	TCCR2A = (1 << WGM21);
 	TCCR2B = (1 << CS22) | (1 << CS21);
 	DDRB |= (1 << PB3);
@@ -214,7 +212,6 @@ uint8_t Leer_Pulsadores(uint16_t *freq_out, char *nota_out) {
 	if (!(PINC & (1 << PC0))) { *freq_out = G4; sprintf(nota_out, "SOL(G4)"); return 1; }
 	if (!(PINC & (1 << PC1))) { *freq_out = A4; sprintf(nota_out, "LA (A4)"); return 1; }
 	if (!(PINC & (1 << PC2))) { *freq_out = B4; sprintf(nota_out, "SI (B4)"); return 1; }
-	// CORRECCIÓN: Se agrega '*' a freq_out
 	if (!(PINC & (1 << PC3))) { *freq_out = C5; sprintf(nota_out, "DO (C5)"); return 1; }
 
 	*freq_out = 0;

@@ -7,9 +7,13 @@
 #include <string.h>
 #include <stdio.h>
 
-#define LCD_ADDR          0x40 
-#define EEPROM_MAGIC_BYTE 0xA5
-#define EEPROM_MAGIC_ADDR ((uint8_t*)0x00)
+#define LCD_ADDR            0x4E 
+#define EEPROM_FIRMA_VALIDA 0xA6
+#define EEPROM_FIRMA_DIR    ((uint8_t*)0x00)
+#define NUM_CUENTAS         3
+
+/* Descomentar para mostrar el UID de cada tarjeta leida (util para registrar tarjetas nuevas) */
+/* #define DEPURAR_UID */
 
 #define RC522_COMMAND_REG    0x01
 #define RC522_COMIEN_REG     0x02
@@ -33,10 +37,10 @@ struct Cuenta {
     uint32_t saldo;
 };
 
-const struct Cuenta cuentas_iniciales[3] = {
-    { {0x53, 0xA2, 0x1B, 0x04}, "1234", 1000 },
-    { {0x89, 0x4F, 0x7A, 0x12}, "4321", 2500 },
-    { {0x12, 0x34, 0x56, 0x78}, "9999", 500  }
+const struct Cuenta cuentas_iniciales[NUM_CUENTAS] = {
+    { {0xF5, 0xF0, 0x2E, 0x07}, "1234", 1000 },
+    { {0x03, 0x6A, 0xC9, 0x26}, "4321", 2500 },
+    { {0xFA, 0xB0, 0x2D, 0x07}, "9999", 500  }
 };
 
 typedef enum {
@@ -155,7 +159,7 @@ bool rc522_detectar_tarjeta(uint8_t *uid_leido) {
     uint8_t cmd_req = 0x26;
     uint8_t buffer[16];
     uint8_t len = 0;
-
+ 
     rc522_escribir(RC522_BITFRAMING_REG, 0x07);
     if (!rc522_comunicar(0x0C, &cmd_req, 1, buffer, &len)) {
         return false;
@@ -276,9 +280,9 @@ void teclado_iniciar(void) {
 
 char teclado_leer(void) {
     const char mapa[4][4] = {
-        {'7', '8', '9', 'A'},
+        {'1', '2', '3', 'A'},
         {'4', '5', '6', 'B'},
-        {'1', '2', '3', 'C'},
+        {'7', '8', '9', 'C'},
         {'*', '0', '#', 'D'}
     };
     const uint8_t pines_fila[4] = {PD2, PD3, PD4, PD5};
@@ -338,25 +342,25 @@ void aviso_alarma_bloqueo(void) {
 }
 
 void eeprom_iniciar(void) {
-    uint8_t magic = eeprom_read_byte(EEPROM_MAGIC_ADDR);
-    if (magic != EEPROM_MAGIC_BYTE) {
-        for (uint8_t i = 0; i < 3; i++) {
+    uint8_t firma = eeprom_read_byte(EEPROM_FIRMA_DIR);
+    if (firma != EEPROM_FIRMA_VALIDA) {
+        for (uint8_t i = 0; i < NUM_CUENTAS; i++) {
             uint8_t *dir = (uint8_t*)(1 + (i * sizeof(struct Cuenta)));
             eeprom_write_block((const void*)&cuentas_iniciales[i], (void*)dir, sizeof(struct Cuenta));
         }
-        eeprom_write_byte(EEPROM_MAGIC_ADDR, EEPROM_MAGIC_BYTE);
+        eeprom_write_byte(EEPROM_FIRMA_DIR, EEPROM_FIRMA_VALIDA);
     }
 }
 
 void eeprom_guardar_activa(void) {
-    if (indice_cuenta >= 0 && indice_cuenta < 3) {
+    if (indice_cuenta >= 0 && indice_cuenta < NUM_CUENTAS) {
         uint8_t *dir = (uint8_t*)(1 + (indice_cuenta * sizeof(struct Cuenta)));
         eeprom_write_block((const void*)&cuenta_activa, (void*)dir, sizeof(struct Cuenta));
     }
 }
 
 int buscar_cuenta(uint8_t *uid) {
-    for (uint8_t i = 0; i < 3; i++) {
+    for (uint8_t i = 0; i < NUM_CUENTAS; i++) {
         struct Cuenta c;
         uint8_t *dir = (uint8_t*)(1 + (i * sizeof(struct Cuenta)));
         eeprom_read_block((void*)&c, (const void*)dir, sizeof(struct Cuenta));
@@ -432,10 +436,10 @@ int main(void) {
                 while (!detectada) {
                     if (!(PIND & (1 << PD0))) {
                         _delay_ms(30);
-                        uid_leido[0] = 0x53;
-                        uid_leido[1] = 0xA2;
-                        uid_leido[2] = 0x1B;
-                        uid_leido[3] = 0x04;
+                        uid_leido[0] = 0xF5;
+                        uid_leido[1] = 0xF0;
+                        uid_leido[2] = 0x2E;
+                        uid_leido[3] = 0x07;
                         detectada = true;
 
                         while (!(PIND & (1 << PD0)));
@@ -446,6 +450,19 @@ int main(void) {
                     }
                     _delay_ms(50);
                 }
+
+#ifdef DEPURAR_UID
+                {
+                    char uidtxt[17];
+                    sprintf(uidtxt, "%02X %02X %02X %02X", uid_leido[0], uid_leido[1], uid_leido[2], uid_leido[3]);
+                    lcd_limpiar();
+                    lcd_posicion(0, 0);
+                    lcd_texto("UID:");
+                    lcd_posicion(0, 1);
+                    lcd_texto(uidtxt);
+                    _delay_ms(3000);
+                }
+#endif
 
                 indice_cuenta = buscar_cuenta(uid_leido);
                 if (indice_cuenta >= 0) {
